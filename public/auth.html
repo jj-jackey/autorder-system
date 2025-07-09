@@ -1,0 +1,475 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🔐 API 인증 - 자동 발주서 변환 시스템</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .auth-container {
+            background: white;
+            padding: 2.5rem;
+            border-radius: 20px;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.1);
+            width: 100%;
+            max-width: 480px;
+            text-align: center;
+        }
+        
+        .logo {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        h1 {
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+            font-size: 1.8rem;
+        }
+        
+        .subtitle {
+            color: #718096;
+            margin-bottom: 2rem;
+            font-size: 1rem;
+        }
+        
+        .form-group {
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+            color: #2d3748;
+        }
+        
+        .api-key-input {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .api-key-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .verify-btn {
+            width: 100%;
+            padding: 1rem;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border: none;
+            border-radius: 10px;
+            font-size: 1.1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            margin-bottom: 1rem;
+        }
+        
+        .verify-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 30px rgba(102, 126, 234, 0.3);
+        }
+        
+        .verify-btn:disabled {
+            background: #a0aec0;
+            cursor: not-allowed;
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .status-message {
+            padding: 1rem;
+            border-radius: 10px;
+            margin-bottom: 1rem;
+            display: none;
+        }
+        
+        .status-message.success {
+            background-color: #f0fff4;
+            color: #22543d;
+            border: 1px solid #9ae6b4;
+        }
+        
+        .status-message.error {
+            background-color: #fff5f5;
+            color: #742a2a;
+            border: 1px solid #feb2b2;
+        }
+        
+        .status-message.loading {
+            background-color: #ebf8ff;
+            color: #2a4365;
+            border: 1px solid #bee3f8;
+        }
+        
+        .info-box {
+            background-color: #f7fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            padding: 1.5rem;
+            margin-bottom: 1.5rem;
+            text-align: left;
+        }
+        
+        .info-title {
+            font-weight: 600;
+            color: #2d3748;
+            margin-bottom: 0.5rem;
+        }
+        
+        .info-text {
+            color: #4a5568;
+            font-size: 0.9rem;
+            line-height: 1.5;
+        }
+        
+        .api-key-example {
+            color: #718096;
+            font-family: 'Courier New', monospace;
+            font-size: 0.85rem;
+            margin-top: 0.5rem;
+        }
+        
+        .footer-note {
+            color: #718096;
+            font-size: 0.8rem;
+            margin-top: 1.5rem;
+            line-height: 1.4;
+        }
+        
+        .loading-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #ffffff;
+            border-radius: 50%;
+            border-top-color: transparent;
+            animation: spin 1s ease-in-out infinite;
+            margin-right: 10px;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* 탭 스타일 */
+        .auth-tabs {
+            display: flex;
+            margin-bottom: 2rem;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .tab-btn {
+            flex: 1;
+            padding: 1rem;
+            border: none;
+            background: #e2e8f0;
+            color: #4a5568;
+            cursor: pointer;
+            font-weight: 600;
+            transition: all 0.3s ease;
+        }
+        
+        .tab-btn.active {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .tab-btn:hover:not(.active) {
+            background: #cbd5e0;
+        }
+        
+        .auth-form {
+            display: none;
+        }
+        
+        .auth-form.active {
+            display: block;
+        }
+        
+        .admin-input {
+            width: 100%;
+            padding: 1rem;
+            border: 2px solid #e2e8f0;
+            border-radius: 10px;
+            font-size: 1rem;
+            transition: all 0.3s ease;
+        }
+        
+        .admin-input:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+    </style>
+</head>
+<body>
+    <div class="auth-container">
+        <div class="logo">🔐</div>
+        <h1>API 인증</h1>
+        <p class="subtitle">자동 발주서 변환 시스템</p>
+        
+        <!-- 로그인 탭 -->
+        <div class="auth-tabs">
+            <button type="button" class="tab-btn active" onclick="switchTab('api')" id="apiTab">API 키 로그인</button>
+            <button type="button" class="tab-btn" onclick="switchTab('admin')" id="adminTab">관리자 로그인</button>
+        </div>
+        
+        <!-- API 키 로그인 폼 -->
+        <div id="apiForm" class="auth-form active">
+            <div class="info-box">
+                <div class="info-title">🤖 OpenAI API 키 필요</div>
+                <div class="info-text">
+                    AI 자동 매핑 기능을 사용하기 위해 OpenAI API 키가 필요합니다.<br>
+                    API 키는 안전하게 세션에만 저장되며, 서버에 영구 저장되지 않습니다.
+                </div>
+                <div class="api-key-example">예시: sk-proj-xxxxxxx</div>
+            </div>
+            
+            <form id="authForm">
+                <div class="form-group">
+                    <label for="apiKey">OpenAI API 키</label>
+                    <input 
+                        type="password" 
+                        id="apiKey" 
+                        class="api-key-input" 
+                        placeholder="sk-proj-로 시작하는 API 키를 입력하세요"
+                        required
+                        value=""
+                    >
+                </div>
+                
+                <div id="statusMessage" class="status-message"></div>
+                
+                <button type="submit" id="verifyBtn" class="verify-btn">
+                    API 키 검증 및 로그인
+                </button>
+            </form>
+        </div>
+        
+        <!-- 관리자 로그인 폼 -->
+        <div id="adminForm" class="auth-form">
+            <div class="info-box">
+                <div class="info-title">👨‍💼 관리자 로그인</div>
+                <div class="info-text">
+                    관리자 계정으로 로그인하여 시스템 OpenAI API 키를 사용합니다.<br>
+                    별도의 API 키 입력이 필요하지 않습니다.
+                </div>
+            </div>
+            
+            <form id="adminAuthForm">
+                <div class="form-group">
+                    <label for="adminUsername">관리자 사용자명</label>
+                    <input 
+                        type="text" 
+                        id="adminUsername" 
+                        class="admin-input" 
+                        placeholder="관리자 사용자명을 입력하세요"
+                        required
+                    >
+                </div>
+                
+                <div class="form-group">
+                    <label for="adminPassword">관리자 비밀번호</label>
+                    <input 
+                        type="password" 
+                        id="adminPassword" 
+                        class="admin-input" 
+                        placeholder="관리자 비밀번호를 입력하세요"
+                        required
+                    >
+                </div>
+                
+                <div id="adminStatusMessage" class="status-message"></div>
+                
+                <button type="submit" id="adminLoginBtn" class="verify-btn">
+                    관리자 로그인
+                </button>
+            </form>
+        </div>
+        
+        <div class="info-box">
+            <div class="info-title">📋 OpenAI API 키 발급 방법</div>
+            <div class="info-text">
+                1. <a href="https://platform.openai.com/api-keys" target="_blank">OpenAI Platform</a>에 접속<br>
+                2. 로그인 후 "Create new secret key" 클릭<br>
+                3. 생성된 API 키를 복사하여 위에 입력
+            </div>
+        </div>
+        
+        <div class="footer-note">
+            🔒 입력하신 API 키는 암호화되어 세션에만 저장됩니다.<br>
+            브라우저를 닫으면 자동으로 삭제됩니다.
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('authForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const apiKey = document.getElementById('apiKey').value.trim();
+            const statusMessage = document.getElementById('statusMessage');
+            const verifyBtn = document.getElementById('verifyBtn');
+            
+            if (!apiKey) {
+                showMessage('API 키를 입력해주세요.', 'error');
+                return;
+            }
+            
+            if (!apiKey.startsWith('sk-')) {
+                showMessage('올바른 OpenAI API 키 형식이 아닙니다. sk-로 시작해야 합니다.', 'error');
+                return;
+            }
+            
+            // 로딩 상태
+            verifyBtn.disabled = true;
+            verifyBtn.innerHTML = '<div class="loading-spinner"></div>API 키 검증 중...';
+            showMessage('API 키를 검증하고 있습니다...', 'loading');
+            
+            try {
+                const response = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ apiKey })
+                });
+                
+                const result = await response.json();
+
+                if (result.success) {
+                    showMessage('✅ API 키 검증 성공! 메인 페이지로 이동합니다...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    showMessage(`❌ ${result.error}`, 'error');
+                    verifyBtn.disabled = false;
+                    verifyBtn.innerHTML = 'API 키 검증 및 로그인';
+                }
+
+            } catch (error) {
+                console.error('인증 오류:', error);
+                showMessage('❌ 네트워크 오류가 발생했습니다. 다시 시도해주세요.', 'error');
+                verifyBtn.disabled = false;
+                verifyBtn.innerHTML = 'API 키 검증 및 로그인';
+            }
+        });
+        
+        function showMessage(message, type, isAdmin = false) {
+            const statusMessage = document.getElementById(isAdmin ? 'adminStatusMessage' : 'statusMessage');
+            statusMessage.textContent = message;
+            statusMessage.className = `status-message ${type}`;
+            statusMessage.style.display = 'block';
+        }
+        
+        // 탭 전환 함수
+        function switchTab(tabType) {
+            // 탭 버튼 상태 변경
+            document.getElementById('apiTab').classList.toggle('active', tabType === 'api');
+            document.getElementById('adminTab').classList.toggle('active', tabType === 'admin');
+            
+            // 폼 표시/숨김
+            document.getElementById('apiForm').classList.toggle('active', tabType === 'api');
+            document.getElementById('adminForm').classList.toggle('active', tabType === 'admin');
+            
+            // 상태 메시지 초기화
+            document.getElementById('statusMessage').style.display = 'none';
+            document.getElementById('adminStatusMessage').style.display = 'none';
+        }
+        
+        // 관리자 로그인 이벤트 리스너
+        document.getElementById('adminAuthForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const username = document.getElementById('adminUsername').value.trim();
+            const password = document.getElementById('adminPassword').value.trim();
+            const adminLoginBtn = document.getElementById('adminLoginBtn');
+            
+            if (!username || !password) {
+                showMessage('사용자명과 비밀번호를 모두 입력해주세요.', 'error', true);
+                return;
+            }
+            
+            // 로딩 상태
+            adminLoginBtn.disabled = true;
+            adminLoginBtn.innerHTML = '<div class="loading-spinner"></div>관리자 인증 중...';
+            showMessage('관리자 계정을 확인하고 있습니다...', 'loading', true);
+            
+            try {
+                const response = await fetch('/api/auth/admin-login', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ username, password })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showMessage('✅ 관리자 로그인 성공! 메인 페이지로 이동합니다...', 'success', true);
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1500);
+                } else {
+                    showMessage(`❌ ${result.error}`, 'error', true);
+                    adminLoginBtn.disabled = false;
+                    adminLoginBtn.innerHTML = '관리자 로그인';
+                }
+                
+            } catch (error) {
+                console.error('관리자 로그인 오류:', error);
+                showMessage('❌ 네트워크 오류가 발생했습니다. 다시 시도해주세요.', 'error', true);
+                adminLoginBtn.disabled = false;
+                adminLoginBtn.innerHTML = '관리자 로그인';
+            }
+        });
+        
+        // 페이지 로드 시 이미 인증된 상태인지 확인
+        window.addEventListener('load', async () => {
+            try {
+                const response = await fetch('/api/auth/check');
+                const result = await response.json();
+                
+                if (result.authenticated) {
+                    showMessage('이미 인증된 상태입니다. 메인 페이지로 이동합니다...', 'success');
+                    setTimeout(() => {
+                        window.location.href = '/';
+                    }, 1000);
+                }
+            } catch (error) {
+                // 인증 확인 실패는 무시 (정상적인 상황)
+            }
+        });
+    </script>
+</body>
+</html> 
