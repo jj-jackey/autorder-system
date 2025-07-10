@@ -635,7 +635,7 @@ function createMappingFromTemplate(template, standardizedData) {
       '플랫폼': standardizedData.플랫폼,
       '처리일시': standardizedData.처리일시,
       
-      // 실제 런모아 형식 (공백 포함)
+      // 실제 런모아 형식 (공백 포함) - 모든 필드 매핑
       '주문 번호': standardizedData.주문번호,
       '주문자 이름': standardizedData.주문자이름,
       '수취인 이름': standardizedData.수취인이름,
@@ -648,18 +648,51 @@ function createMappingFromTemplate(template, standardizedData) {
       '발송일자': standardizedData.발송일자,
       'SKU': standardizedData.SKU,
       '옵션': standardizedData.옵션,
-      '개인통관번호': standardizedData.개인통관번호
+      '개인통관번호': standardizedData.개인통관번호,
+      
+      // 추가 매핑 (공백 없는 버전도 지원)
+      '주문번호': standardizedData.주문번호,
+      '주문자이름': standardizedData.주문자이름,
+      '수취인이름': standardizedData.수취인이름,
+      '주문상태': standardizedData.주문상태,
+      '주문자연락처': standardizedData.주문자연락처,
+      '주문자이메일': standardizedData.주문자이메일,
+      '수취인연락처': standardizedData.수취인연락처,
+      '배송정보': standardizedData.배송정보,
+      '주문금액': standardizedData.주문금액,
+      '발송일자': standardizedData.발송일자,
+      
+      // 영어 필드명도 지원  
+      'order_id': standardizedData.주문번호,
+      'customer_name': standardizedData.주문자이름,
+      'product_name': standardizedData.상품명,
+      'quantity': standardizedData.수량,
+      'amount': standardizedData.주문금액,
+      'phone': standardizedData.주문자연락처,
+      'address': standardizedData.배송정보
     };
     
-    // 공급업체 필드 매핑 적용
+    // 공급업체 필드 매핑 적용 (개선된 오류 처리)
     Object.keys(supplierMapping).forEach(supplierField => {
       const sourceField = supplierMapping[supplierField];
       
-      if (dataMapping[sourceField] !== undefined) {
+      if (dataMapping[sourceField] !== undefined && dataMapping[sourceField] !== null && dataMapping[sourceField] !== '') {
         mappingRules[supplierField] = dataMapping[sourceField];
       } else {
-        console.warn(`⚠️ 매핑할 데이터를 찾을 수 없음: ${sourceField} → ${supplierField}`);
-        mappingRules[supplierField] = '';
+        // 기본값 설정
+        let defaultValue = '';
+        if (supplierField.includes('금액') || supplierField.includes('수량')) {
+          defaultValue = 0;
+        } else if (supplierField.includes('일자')) {
+          defaultValue = new Date().toLocaleDateString('ko-KR');
+        } else if (supplierField.includes('SKU')) {
+          defaultValue = 'N/A';
+        } else if (supplierField.includes('옵션')) {
+          defaultValue = '기본';
+        }
+        
+        console.warn(`⚠️ 매핑할 데이터를 찾을 수 없음: ${sourceField} → ${supplierField}, 기본값 적용: ${defaultValue}`);
+        mappingRules[supplierField] = defaultValue;
       }
     });
     
