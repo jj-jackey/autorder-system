@@ -136,21 +136,38 @@ function validateOrderData(data) {
   // 런모아 실제 형식 검증
   if (data.orders && Array.isArray(data.orders)) {
     // 다중 주문 형식 (실제 런모아 엑셀 형식)
+    console.log('🔍 다중 주문 형식 검증 시작:', {
+      ordersCount: data.orders.length,
+      firstOrder: data.orders[0] ? Object.keys(data.orders[0]) : 'undefined'
+    });
+    
     if (data.orders.length === 0) {
       errors.push('주문 목록이 비어있습니다.');
     } else {
       data.orders.forEach((order, index) => {
+        console.log(`📦 주문 ${index + 1} 검증:`, {
+          주문_번호: order.주문_번호,
+          상품명: order.상품명,
+          주문자_이름: order.주문자_이름,
+          수량: order.수량,
+          allFields: Object.keys(order)
+        });
+        
         if (!order.주문_번호) {
           errors.push(`주문 ${index + 1}: 주문_번호가 필요합니다.`);
+          console.error(`❌ 주문 ${index + 1}: 주문_번호 누락`);
         }
         if (!order.상품명) {
           errors.push(`주문 ${index + 1}: 상품명이 필요합니다.`);
+          console.error(`❌ 주문 ${index + 1}: 상품명 누락`);
         }
         if (!order.주문자_이름) {
           errors.push(`주문 ${index + 1}: 주문자_이름이 필요합니다.`);
+          console.error(`❌ 주문 ${index + 1}: 주문자_이름 누락`);
         }
         if (!order.수량 || order.수량 <= 0) {
           errors.push(`주문 ${index + 1}: 유효한 수량이 필요합니다.`);
+          console.error(`❌ 주문 ${index + 1}: 수량 문제, 값: ${order.수량}`);
         }
       });
     }
