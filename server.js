@@ -202,9 +202,48 @@ app.use((error, req, res, next) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 서버가 포트 ${PORT}에서 실행 중입니다.`);
   console.log(`📁 파일 업로드: http://localhost:${PORT}`);
   console.log(`☁️ 스토리지: Supabase Storage (모든 환경)`);
   console.log(`🔗 Supabase URL: ${process.env.SUPABASE_URL ? '✅ 연결됨' : '❌ 설정안됨'}`);
+  
+  // Render 환경에서 Supabase 연결 상태 확인
+  if (process.env.NODE_ENV === 'production') {
+    try {
+      console.log('🔍 Supabase 연결 상태 확인 중...');
+      const { data, error } = await supabase.storage.listBuckets();
+      
+      if (error) {
+        console.error('❌ Supabase Storage 연결 실패:', error.message);
+        console.log('💡 환경 변수를 확인해주세요: SUPABASE_URL, SUPABASE_ANON_KEY');
+      } else {
+        console.log('✅ Supabase Storage 연결 성공:', data.map(b => b.name).join(', '));
+      }
+    } catch (connectError) {
+      console.error('❌ Supabase 연결 테스트 실패:', connectError.message);
+      console.log('⚠️ 네트워크 상태를 확인해주세요. 서비스는 계속 실행됩니다.');
+    }
+  }
+  
+  // Node.js 네트워크 설정 최적화 (Render 환경용)
+  if (process.env.NODE_ENV === 'production') {
+    // Keep-alive 연결 설정
+    const http = require('http');
+    const https = require('https');
+    
+    const keepAliveAgent = new https.Agent({
+      keepAlive: true,
+      keepAliveMsecs: 30000,
+      maxSockets: 50,
+      maxFreeSockets: 10,
+      timeout: 60000,
+      freeSocketTimeout: 30000
+    });
+    
+    // 글로벌 에이전트 설정
+    https.globalAgent = keepAliveAgent;
+    
+    console.log('⚡ Keep-alive 연결 설정 완료 (Render 최적화)');
+  }
 }); 

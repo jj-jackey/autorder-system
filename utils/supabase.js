@@ -1,19 +1,30 @@
 const { createClient } = require('@supabase/supabase-js');
 
-// Supabase 클라이언트 초기화
+// Supabase 클라이언트 초기화 (타임아웃 설정 추가)
 const supabase = createClient(
   process.env.SUPABASE_URL,
-  process.env.SUPABASE_ANON_KEY
+  process.env.SUPABASE_ANON_KEY,
+  {
+    global: {
+      fetch: (url, options = {}) => {
+        return fetch(url, {
+          ...options,
+          timeout: 60000, // 60초 타임아웃
+        });
+      }
+    }
+  }
 );
 
 /**
- * 파일을 Supabase Storage에 업로드
+ * 파일을 Supabase Storage에 업로드 (강화된 재시도 로직)
  * @param {Buffer} fileBuffer - 파일 버퍼
  * @param {string} fileName - 파일명
  * @param {string} bucket - 버킷명 (기본값: 'uploads')
+ * @param {number} maxRetries - 최대 재시도 횟수 (기본값: 5)
  * @returns {Promise<{success: boolean, data?: any, error?: string}>}
  */
-async function uploadFile(fileBuffer, fileName, bucket = 'uploads', maxRetries = 3) {
+async function uploadFile(fileBuffer, fileName, bucket = 'uploads', maxRetries = 5) {
   // 파일 확장자에 따른 MIME 타입 설정
   const getContentType = (fileName) => {
     const ext = fileName.toLowerCase().split('.').pop();
@@ -32,57 +43,117 @@ async function uploadFile(fileBuffer, fileName, bucket = 'uploads', maxRetries =
   };
 
   let lastError = null;
+  let consecutiveFailures = 0;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
-      console.log(`📤 Supabase Storage 업로드 시도 ${attempt}/${maxRetries}:`, fileName);
+      console.log(`📤 Supabase Storage 업로드 시도 ${attempt}/${maxRetries}:`, {
+        fileName,
+        fileSize: fileBuffer.length,
+        bucket
+      });
       
-      const { data, error } = await supabase.storage
+      // 연속 실패 시 더 긴 대기 (서킷 브레이커 패턴)
+      if (consecutiveFailures >= 2) {
+        const circuitDelay = Math.min(5000 + consecutiveFailures * 2000, 15000);
+        console.log(`🔄 서킷 브레이커: ${circuitDelay}ms 대기 중...`);
+        await new Promise(resolve => setTimeout(resolve, circuitDelay));
+      }
+      
+      // Promise.race를 사용한 타임아웃 제어
+      const uploadPromise = supabase.storage
         .from(bucket)
         .upload(`files/${fileName}`, fileBuffer, {
           cacheControl: '3600',
           upsert: false,
           contentType: getContentType(fileName)
         });
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Upload timeout after 60 seconds')), 60000);
+      });
+      
+      const { data, error } = await Promise.race([uploadPromise, timeoutPromise]);
 
       if (error) {
         lastError = error;
-        console.error(`❌ Supabase 업로드 오류 (시도 ${attempt}):`, error);
+        consecutiveFailures++;
+        console.error(`❌ Supabase 업로드 오류 (시도 ${attempt}):`, {
+          error: error.message,
+          status: error.status || error.statusCode,
+          consecutiveFailures
+        });
         
-        // 504 Gateway Timeout 또는 네트워크 오류인 경우 재시도
-        if (attempt < maxRetries && (
+        // 504, 503, 502, 타임아웃, 네트워크 오류인 경우 재시도
+        const shouldRetry = attempt < maxRetries && (
           error.message.includes('504') || 
+          error.message.includes('503') || 
+          error.message.includes('502') || 
           error.message.includes('Gateway Timeout') || 
+          error.message.includes('Bad Gateway') ||
+          error.message.includes('Service Unavailable') ||
           error.message.includes('timeout') ||
           error.message.includes('ECONNRESET') ||
-          error.message.includes('ETIMEDOUT')
-        )) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-          console.log(`🔄 ${delay}ms 후 재시도...`);
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('ENOTFOUND') ||
+          error.message.includes('fetch failed') ||
+          (error.status >= 500 && error.status < 600)
+        );
+        
+        if (shouldRetry) {
+          // 지수 백오프 + 지터 (최대 20초)
+          const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          const jitter = Math.random() * 1000; // 0-1초 랜덤
+          const delay = baseDelay + jitter;
+          
+          console.log(`🔄 ${Math.round(delay)}ms 후 재시도... (연속실패: ${consecutiveFailures})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
+        } else {
+          // 재시도하지 않는 오류인 경우
+          console.error(`❌ 재시도 불가능한 오류:`, error.message);
+          return { success: false, error: error.message };
         }
-        
-        return { success: false, error: error.message };
       }
 
-      console.log(`✅ Supabase 업로드 성공 (시도 ${attempt}):`, data.path);
+      console.log(`✅ Supabase 업로드 성공 (시도 ${attempt}):`, {
+        path: data.path,
+        fileSize: fileBuffer.length
+      });
+      
+      consecutiveFailures = 0; // 성공 시 실패 카운터 리셋
       return { success: true, data };
       
     } catch (error) {
       lastError = error;
-      console.error(`❌ 업로드 예외 오류 (시도 ${attempt}):`, error);
+      consecutiveFailures++;
+      console.error(`❌ 업로드 예외 오류 (시도 ${attempt}):`, {
+        error: error.message,
+        consecutiveFailures,
+        stack: error.stack?.split('\n')[0]
+      });
       
       // 네트워크 관련 오류인 경우 재시도
-      if (attempt < maxRetries && (
+      const shouldRetry = attempt < maxRetries && (
         error.message.includes('504') || 
+        error.message.includes('503') || 
+        error.message.includes('502') || 
         error.message.includes('timeout') ||
         error.message.includes('ECONNRESET') ||
         error.message.includes('ETIMEDOUT') ||
-        error.message.includes('fetch failed')
-      )) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        console.log(`🔄 ${delay}ms 후 재시도...`);
+        error.message.includes('ENOTFOUND') ||
+        error.message.includes('fetch failed') ||
+        error.message.includes('network') ||
+        error.name === 'AbortError' ||
+        error.name === 'TimeoutError'
+      );
+      
+      if (shouldRetry) {
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        const jitter = Math.random() * 1000;
+        const delay = baseDelay + jitter;
+        
+        console.log(`🔄 ${Math.round(delay)}ms 후 재시도... (연속실패: ${consecutiveFailures})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
@@ -91,78 +162,168 @@ async function uploadFile(fileBuffer, fileName, bucket = 'uploads', maxRetries =
   
   // 모든 재시도 실패
   console.error(`❌ ${maxRetries}번의 업로드 재시도 모두 실패:`, lastError?.message);
-  return { success: false, error: lastError?.message || '파일 업로드에 실패했습니다.' };
+  return { 
+    success: false, 
+    error: `파일 업로드 실패 (${maxRetries}번 재시도): ${lastError?.message || '알 수 없는 오류'}. Render-Supabase 네트워크 연결을 확인해주세요.`
+  };
 }
 
 /**
- * Supabase Storage에서 파일 다운로드 (재시도 로직 포함)
+ * Supabase Storage에서 파일 다운로드 (강화된 재시도 로직)
  * @param {string} fileName - 파일명
  * @param {string} bucket - 버킷명 (기본값: 'uploads')
- * @param {number} maxRetries - 최대 재시도 횟수 (기본값: 3)
+ * @param {number} maxRetries - 최대 재시도 횟수 (기본값: 5)
  * @returns {Promise<{success: boolean, data?: Buffer, error?: string}>}
  */
-async function downloadFile(fileName, bucket = 'uploads', maxRetries = 3) {
+async function downloadFile(fileName, bucket = 'uploads', maxRetries = 5) {
   let lastError = null;
+  let consecutiveFailures = 0;
   
   for (let attempt = 1; attempt <= maxRetries; attempt++) {
     try {
       console.log(`📥 Supabase Storage 다운로드 시도 ${attempt}/${maxRetries}:`, fileName);
       
-      const { data, error } = await supabase.storage
+      // 연속 실패 시 더 긴 대기 (서킷 브레이커 패턴)
+      if (consecutiveFailures >= 2) {
+        const circuitDelay = Math.min(5000 + consecutiveFailures * 2000, 15000);
+        console.log(`🔄 서킷 브레이커: ${circuitDelay}ms 대기 중...`);
+        await new Promise(resolve => setTimeout(resolve, circuitDelay));
+      }
+      
+      // Promise.race를 사용한 타임아웃 제어
+      const downloadPromise = supabase.storage
         .from(bucket)
         .download(`files/${fileName}`);
+      
+      const timeoutPromise = new Promise((_, reject) => {
+        setTimeout(() => reject(new Error('Download timeout after 45 seconds')), 45000);
+      });
+      
+      const { data, error } = await Promise.race([downloadPromise, timeoutPromise]);
 
       if (error) {
         lastError = error;
-        console.error(`❌ Supabase 다운로드 오류 (시도 ${attempt}):`, error);
+        consecutiveFailures++;
+        console.error(`❌ Supabase 다운로드 오류 (시도 ${attempt}):`, {
+          error: error.message,
+          status: error.status || error.statusCode,
+          consecutiveFailures
+        });
         
-        // 504 Gateway Timeout 또는 네트워크 오류인 경우 재시도
-        if (attempt < maxRetries && (
+        // 504, 503, 502, 타임아웃, 네트워크 오류인 경우 재시도
+        const shouldRetry = attempt < maxRetries && (
           error.message.includes('504') || 
+          error.message.includes('503') || 
+          error.message.includes('502') || 
           error.message.includes('Gateway Timeout') || 
+          error.message.includes('Bad Gateway') ||
+          error.message.includes('Service Unavailable') ||
           error.message.includes('timeout') ||
           error.message.includes('ECONNRESET') ||
-          error.message.includes('ETIMEDOUT')
-        )) {
-          const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000); // 지수 백오프 (최대 5초)
-          console.log(`🔄 ${delay}ms 후 재시도...`);
+          error.message.includes('ETIMEDOUT') ||
+          error.message.includes('ENOTFOUND') ||
+          error.message.includes('fetch failed') ||
+          (error.status >= 500 && error.status < 600)
+        );
+        
+        if (shouldRetry) {
+          // 지수 백오프 + 지터 (최대 20초)
+          const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+          const jitter = Math.random() * 1000; // 0-1초 랜덤
+          const delay = baseDelay + jitter;
+          
+          console.log(`🔄 ${Math.round(delay)}ms 후 재시도... (연속실패: ${consecutiveFailures})`);
           await new Promise(resolve => setTimeout(resolve, delay));
           continue;
+        } else {
+          // 재시도하지 않는 오류인 경우
+          console.error(`❌ 재시도 불가능한 오류:`, error.message);
+          return { success: false, error: error.message };
         }
-        
-        return { success: false, error: error.message };
       }
 
       // Blob을 Buffer로 변환
       const arrayBuffer = await data.arrayBuffer();
       const buffer = Buffer.from(arrayBuffer);
 
-      console.log(`✅ Supabase 다운로드 성공 (시도 ${attempt})`);
+      console.log(`✅ Supabase 다운로드 성공 (시도 ${attempt}):`, {
+        fileSize: buffer.length,
+        fileName: fileName
+      });
+      
+      consecutiveFailures = 0; // 성공 시 실패 카운터 리셋
       return { success: true, data: buffer };
       
     } catch (error) {
       lastError = error;
-      console.error(`❌ 다운로드 예외 오류 (시도 ${attempt}):`, error);
+      consecutiveFailures++;
+      console.error(`❌ 다운로드 예외 오류 (시도 ${attempt}):`, {
+        error: error.message,
+        consecutiveFailures,
+        stack: error.stack?.split('\n')[0]
+      });
       
       // 네트워크 관련 오류인 경우 재시도
-      if (attempt < maxRetries && (
+      const shouldRetry = attempt < maxRetries && (
         error.message.includes('504') || 
+        error.message.includes('503') || 
+        error.message.includes('502') || 
         error.message.includes('timeout') ||
         error.message.includes('ECONNRESET') ||
         error.message.includes('ETIMEDOUT') ||
-        error.message.includes('fetch failed')
-      )) {
-        const delay = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
-        console.log(`🔄 ${delay}ms 후 재시도...`);
+        error.message.includes('ENOTFOUND') ||
+        error.message.includes('fetch failed') ||
+        error.message.includes('network') ||
+        error.name === 'AbortError' ||
+        error.name === 'TimeoutError'
+      );
+      
+      if (shouldRetry) {
+        const baseDelay = Math.min(1000 * Math.pow(2, attempt - 1), 10000);
+        const jitter = Math.random() * 1000;
+        const delay = baseDelay + jitter;
+        
+        console.log(`🔄 ${Math.round(delay)}ms 후 재시도... (연속실패: ${consecutiveFailures})`);
         await new Promise(resolve => setTimeout(resolve, delay));
         continue;
       }
     }
   }
   
-  // 모든 재시도 실패
-  console.error(`❌ ${maxRetries}번의 재시도 모두 실패:`, lastError?.message);
-  return { success: false, error: lastError?.message || '파일 다운로드에 실패했습니다.' };
+  // 모든 재시도 실패 - 대체 방법 시도
+  console.error(`❌ ${maxRetries}번의 재시도 모두 실패. 공개 URL 방법 시도...`);
+  
+  try {
+    const publicUrl = getPublicUrl(fileName, bucket);
+    console.log(`🔄 공개 URL 다운로드 시도:`, publicUrl);
+    
+    const response = await fetch(publicUrl, {
+      timeout: 30000
+    });
+    
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+    }
+    
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    
+    console.log(`✅ 공개 URL 다운로드 성공:`, {
+      fileSize: buffer.length,
+      fileName: fileName
+    });
+    
+    return { success: true, data: buffer };
+    
+  } catch (publicUrlError) {
+    console.error(`❌ 공개 URL 다운로드도 실패:`, publicUrlError.message);
+  }
+  
+  console.error(`❌ 모든 다운로드 방법 실패:`, lastError?.message);
+  return { 
+    success: false, 
+    error: `파일 다운로드 실패 (${maxRetries}번 재시도): ${lastError?.message || '알 수 없는 오류'}. Render-Supabase 네트워크 연결을 확인해주세요.`
+  };
 }
 
 /**

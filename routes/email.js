@@ -65,10 +65,30 @@ router.post('/send', async (req, res) => {
     
     if (!downloadResult.success) {
       console.log('❌ 첨부파일 다운로드 실패:', downloadResult.error);
-      return res.status(404).json({ error: '첨부파일을 찾을 수 없습니다.' });
+      
+      // 네트워크 오류인 경우 더 구체적인 안내
+      const isNetworkError = downloadResult.error.includes('504') || 
+                            downloadResult.error.includes('timeout') ||
+                            downloadResult.error.includes('Gateway') ||
+                            downloadResult.error.includes('네트워크');
+      
+      const errorMessage = isNetworkError 
+        ? '첨부파일 다운로드 중 네트워크 오류가 발생했습니다. 잠시 후 다시 시도해주세요.'
+        : '첨부파일을 찾을 수 없습니다. 발주서가 정상적으로 생성되었는지 확인해주세요.';
+      
+      return res.status(isNetworkError ? 503 : 404).json({ 
+        error: errorMessage,
+        details: downloadResult.error,
+        suggestion: isNetworkError 
+          ? '네트워크 상태가 안정된 후 다시 시도해주세요.'
+          : '발주서를 다시 생성한 후 이메일 전송을 시도해주세요.'
+      });
     }
     
-    console.log('✅ 첨부파일 메모리 로드 완료 (Render 배포 최적화)');
+    console.log('✅ 첨부파일 메모리 로드 완료 (Render 배포 최적화):', {
+      fileSize: downloadResult.data.length,
+      fileName: attachmentPath
+    });
 
     // 이메일 템플릿 적용 (템플릿이 있는 경우)
     let emailBody = body || '안녕하세요.\n\n발주서를 첨부파일로 보내드립니다.\n\n확인 후 회신 부탁드립니다.\n\n감사합니다.';

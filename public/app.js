@@ -1369,7 +1369,19 @@ async function sendEmail() {
             updateDashboard();
         } else {
             console.log('❌ 이메일 전송 실패:', result.error);
-            showEmailResult('error', result.error || '이메일 전송에 실패했습니다.');
+            
+            // 네트워크 오류인 경우 재시도 안내 추가
+            let errorMessage = result.error || '이메일 전송에 실패했습니다.';
+            if (result.suggestion) {
+                errorMessage += '\n\n💡 ' + result.suggestion;
+            }
+            
+            // 503 오류인 경우 재시도 버튼 표시
+            if (response.status === 503) {
+                errorMessage += '\n\n잠시 후 "이메일 전송" 버튼을 다시 클릭해주세요.';
+            }
+            
+            showEmailResult('error', errorMessage);
         }
         
     } catch (error) {

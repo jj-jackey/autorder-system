@@ -124,19 +124,78 @@ FOR ALL USING (bucket_id = 'generated');
    - 매핑 저장 → Supabase Storage `mappings` 버킷 확인  
    - 발주서 생성 → Supabase Storage `generated` 버킷 확인
 
-## 🚨 **문제 해결**
+## 🚨 **8. 문제 해결**
 
-### 업로드 실패 시
+### 8.1 일반적인 업로드/다운로드 실패 시
 1. Supabase URL과 API Key 확인
 2. 버킷이 올바르게 생성되었는지 확인
 3. 버킷이 Public으로 설정되었는지 확인
 
-### 다운로드 실패 시  
-1. 파일이 올바른 버킷에 저장되었는지 확인
-2. 파일명이 정확한지 확인
-3. 네트워크 연결 상태 확인
+### 8.2 **504 Gateway Timeout 오류 (Render 배포 환경)**
 
-## 💰 **비용 안내**
+이 오류는 Render와 Supabase 간의 네트워크 지연으로 인해 발생할 수 있습니다.
+
+#### 🔧 **자동 해결 기능**
+시스템에 다음과 같은 강화된 재시도 로직이 적용되어 있습니다:
+
+- **재시도 횟수**: 최대 5번 (기존 3번에서 증가)
+- **지수 백오프**: 1초 → 2초 → 4초 → 8초 → 16초 대기
+- **서킷 브레이커**: 연속 실패 시 더 긴 대기
+- **대체 다운로드**: Supabase API 실패 시 공개 URL 시도
+- **타임아웃 제어**: 60초 업로드, 45초 다운로드 타임아웃
+
+#### 🔍 **오류 확인 방법**
+```bash
+# Render 로그에서 다음과 같은 메시지 확인
+❌ Supabase 다운로드 오류 (시도 1/5): StorageUnknownError: {}
+🔄 2000ms 후 재시도... (연속실패: 1)
+✅ Supabase 다운로드 성공 (시도 3)
+```
+
+#### 💡 **사용자 대응 방법**
+1. **이메일 전송 실패 시**: 1-2분 후 다시 시도
+2. **연속 실패 시**: Render 서비스 재시작
+3. **지속적 문제**: Supabase 상태 페이지 확인
+
+#### 🛠️ **추가 해결 방법**
+
+**A) Render 서비스 재시작**
+```bash
+# Render 대시보드에서 "Manual Deploy" 클릭
+```
+
+**B) Supabase 프로젝트 상태 확인**
+- [Supabase Status](https://status.supabase.com) 페이지 확인
+- 해당 리전의 서비스 상태 확인
+
+**C) 환경 변수 재확인**
+```bash
+# Render 환경 변수에서 다음 확인
+SUPABASE_URL=https://your-project-id.supabase.co  # 올바른 URL
+SUPABASE_ANON_KEY=eyJ...  # 올바른 anon key
+```
+
+**D) 네트워크 연결 테스트**
+```bash
+# 서버 시작 시 로그에서 연결 상태 확인
+✅ Supabase Storage 연결 성공: uploads, mappings, generated
+```
+
+### 8.3 기타 오류
+
+**파일 크기 초과**
+- 파일 크기를 50MB 이하로 조정
+- 필요시 압축 후 업로드
+
+**권한 오류**
+- 버킷 정책(RLS) 설정 확인
+- Public 버킷으로 설정 확인
+
+**메모리 부족**
+- Render 플랜 업그레이드 고려
+- 대용량 파일 처리 시 분할 업로드 검토
+
+## 💰 **9. 비용 안내**
 
 Supabase 무료 플랜:
 - **Storage**: 1GB 무료
