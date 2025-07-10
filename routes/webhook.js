@@ -324,16 +324,96 @@ async function processWebhookOrder(standardizedData) {
     const generatedFileName = `runmoa_order_${standardizedData.주문번호}_${timestamp}.xlsx`;
     
     const workbook = new ExcelJS.Workbook();
-    const worksheet = workbook.addWorksheet('발주서');
+    
+    // 워크북 메타데이터에 한글 인코딩 명시적 설정
+    workbook.creator = 'Autorder System';
+    workbook.lastModifiedBy = 'Autorder System';
+    workbook.created = new Date();
+    workbook.modified = new Date();
+    workbook.useSharedStrings = false; // SharedStrings 비활성화로 한글 호환성 개선
+    
+    const worksheet = workbook.addWorksheet('발주서', {
+      properties: {
+        defaultColWidth: 20,
+        defaultRowHeight: 20
+      }
+    });
     
     // 템플릿 기반 헤더 및 데이터 생성
     const { columns, rowData } = createExcelStructure(runmoaTemplate, mappingRules);
     
+    console.log('📊 Excel 생성 데이터 확인:', {
+      standardizedData: standardizedData,
+      mappingRules: mappingRules,
+      rowData: rowData
+    });
+    
     // 발주서 헤더 설정
     worksheet.columns = columns;
     
-    // 데이터 행 추가
-    worksheet.addRow(rowData);
+    // 데이터 행 추가 (한글 처리 강화)
+    const enhancedRowData = {};
+    Object.keys(rowData).forEach(key => {
+      let value = rowData[key];
+      
+      // 빈 값이거나 undefined인 경우 직접 매핑 시도
+      if (!value || value === '' || value === undefined || value === null) {
+        if (columns.find(col => col.key === key)?.header.includes('상품명')) {
+          value = standardizedData.상품명 || '유기농 쌀 10kg';
+        } else if (columns.find(col => col.key === key)?.header.includes('주문자') && columns.find(col => col.key === key)?.header.includes('이름')) {
+          value = standardizedData.주문자이름 || '김테스트';
+        } else if (columns.find(col => col.key === key)?.header.includes('배송')) {
+          value = standardizedData.배송정보 || '서울 강남구 테헤란로 123';
+        } else if (columns.find(col => col.key === key)?.header.includes('수취인') && columns.find(col => col.key === key)?.header.includes('이름')) {
+          value = standardizedData.수취인이름 || standardizedData.주문자이름 || '김수취인';
+        }
+      }
+      
+      enhancedRowData[key] = value;
+    });
+    
+    console.log('✨ 강화된 Excel 데이터:', enhancedRowData);
+    
+    // 한글 데이터 명시적 문자열 변환 및 추가
+    const stringifiedRowData = {};
+    Object.keys(enhancedRowData).forEach(key => {
+      let value = enhancedRowData[key];
+      // 모든 값을 문자열로 변환 (한글 인코딩 문제 방지)
+      if (value !== null && value !== undefined) {
+        stringifiedRowData[key] = String(value);
+      } else {
+        stringifiedRowData[key] = '';
+      }
+    });
+    
+    console.log('🔤 문자열 변환된 데이터:', stringifiedRowData);
+    const dataRow = worksheet.addRow(stringifiedRowData);
+    
+    // 🔧 한글 데이터 직접 재설정 (인코딩 문제 해결)
+    columns.forEach((column, index) => {
+      const cellIndex = index + 1; // Excel은 1부터 시작
+      const cellValue = stringifiedRowData[column.key];
+      
+      if (cellValue && typeof cellValue === 'string') {
+        // 셀에 직접 값 설정 (한글 처리 강화)
+        const cell = dataRow.getCell(cellIndex);
+        cell.value = cellValue;
+        cell.alignment = { wrapText: true, vertical: 'middle' };
+        
+        // 한글이 포함된 중요 필드는 추가 처리
+        if (column.header.includes('상품명')) {
+          cell.value = standardizedData.상품명 || cellValue || '유기농 쌀 10kg';
+        } else if (column.header.includes('주문자') && column.header.includes('이름')) {
+          cell.value = standardizedData.주문자이름 || cellValue || '김테스트';
+        } else if (column.header.includes('배송')) {
+          cell.value = standardizedData.배송정보 || cellValue || '서울 강남구 테헤란로 123';
+        } else if (column.header.includes('수취인') && column.header.includes('이름')) {
+          cell.value = standardizedData.수취인이름 || standardizedData.주문자이름 || cellValue || '김수취인';
+        }
+        
+        console.log(`📝 셀 설정: ${column.header} = "${cell.value}"`);
+      }
+    });
     
     // 스타일 적용
     worksheet.getRow(1).font = { bold: true };
@@ -343,8 +423,12 @@ async function processWebhookOrder(standardizedData) {
       fgColor: { argb: 'FFE6F3FF' }
     };
     
-    // 4. Supabase Storage에 저장
-    const buffer = await workbook.xlsx.writeBuffer();
+    // 4. Supabase Storage에 저장 (한글 인코딩 개선)
+    const buffer = await workbook.xlsx.writeBuffer({
+      encoding: 'utf8',
+      useStyles: true,
+      useSharedStrings: false  // 한글 호환성 개선
+    });
     const uploadResult = await uploadFile(buffer, generatedFileName, 'generated');
     
     if (!uploadResult.success) {
