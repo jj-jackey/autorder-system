@@ -675,6 +675,88 @@
             </div>
         </div>
 
+        <!-- 런모아 연동 관리 섹션 (관리자 전용) -->
+        <div class="webhook-management" id="webhookManagement" style="display: none; padding: 20px; background: linear-gradient(135deg, #f1f3f4 0%, #e8eaed 100%); border-bottom: 1px solid #dadce0; margin-bottom: 20px;">
+            <h3 style="color: #212529; margin-bottom: 20px; font-size: 1.2em; display: flex; align-items: center;">
+                🔗 런모아 플랫폼 연동 관리
+                <span style="background: linear-gradient(135deg, #ff6b6b 0%, #ee5a52 100%); color: white; font-size: 0.7em; padding: 2px 8px; border-radius: 10px; margin-left: 10px;">NEW!</span>
+            </h3>
+            
+            <div class="webhook-section" style="display: grid; grid-template-columns: 1fr 1fr; gap: 20px;">
+                <div class="webhook-info">
+                    <div class="info-card" style="background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.1); margin-bottom: 15px;">
+                        <h4 style="color: #495057; margin-bottom: 15px;">📋 연동 정보</h4>
+                        <div class="webhook-details">
+                            <div class="detail-item" style="margin-bottom: 10px; display: flex; align-items: center; gap: 10px;">
+                                <strong style="min-width: 80px;">API URL:</strong> 
+                                <code id="webhookUrl" style="background: #e9ecef; padding: 5px 10px; border-radius: 4px; flex: 1; font-size: 0.8em;">로딩 중...</code>
+                                <button onclick="copyToClipboard('webhookUrl')" class="copy-btn" style="background: #6c757d; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-size: 0.8em;">📋</button>
+                            </div>
+                            <div class="detail-item" style="margin-bottom: 10px;">
+                                <strong>HTTP 방식:</strong> POST
+                            </div>
+                            <div class="detail-item" style="margin-bottom: 10px;">
+                                <strong>인증 방법:</strong> Authorization: Bearer YOUR_API_KEY
+                            </div>
+                            <div class="detail-item">
+                                <strong>응답 형식:</strong> JSON
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="info-card" style="background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.1);">
+                        <h4 style="color: #495057; margin-bottom: 15px;">🔐 API 키 관리</h4>
+                        <div class="api-key-section">
+                            <div class="api-key-status" id="apiKeyStatus" style="margin-bottom: 15px; padding: 10px; background: #f8f9fa; border-radius: 4px; border-left: 4px solid #ffc107;">
+                                <span class="status-indicator" id="apiKeyIndicator">⚠️</span>
+                                <span id="apiKeyText" style="margin-left: 10px;">API 키 상태 확인 중...</span>
+                            </div>
+                            <div style="display: flex; gap: 10px;">
+                                <button onclick="checkWebhookStatus()" class="btn" style="flex: 1; background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); font-size: 0.8em;">🔍 상태 확인</button>
+                                <button onclick="testWebhookAPI()" class="btn" style="flex: 1; background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); font-size: 0.8em;">🧪 API 테스트</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="webhook-test">
+                    <div style="background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.1);">
+                        <h4 style="color: #495057; margin-bottom: 15px;">🧪 테스트 주문 전송</h4>
+                        <div class="test-form">
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">주문번호:</label>
+                                <input type="text" id="testOrderId" value="TEST-001" class="test-input" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">고객명:</label>
+                                <input type="text" id="testCustomerName" value="테스트고객" class="test-input" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                            </div>
+                            <div class="form-group" style="margin-bottom: 10px;">
+                                <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">상품명:</label>
+                                <input type="text" id="testProductName" value="테스트 상품" class="test-input" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                            </div>
+                            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 15px;">
+                                <div class="form-group">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">수량:</label>
+                                    <input type="number" id="testQuantity" value="1" class="test-input" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                                </div>
+                                <div class="form-group">
+                                    <label style="display: block; margin-bottom: 5px; font-weight: 500; color: #495057;">단가:</label>
+                                    <input type="number" id="testUnitPrice" value="10000" class="test-input" style="width: 100%; padding: 8px; border: 1px solid #ced4da; border-radius: 4px;">
+                                </div>
+                            </div>
+                            <button onclick="sendTestOrder()" class="btn btn-success" style="width: 100%; background: linear-gradient(135deg, #28a745 0%, #1e7e34 100%); font-size: 0.9em;">📤 테스트 주문 전송</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div id="webhookTestResult" class="webhook-result" style="display: none; margin-top: 20px; background: linear-gradient(145deg, #ffffff 0%, #f8f9fa 100%); padding: 20px; border-radius: 8px; box-shadow: 0 3px 8px rgba(0,0,0,0.1);">
+                <h4 style="color: #495057; margin-bottom: 15px;">📋 테스트 결과</h4>
+                <pre id="testResultContent" style="background: #f8f9fa; padding: 15px; border-radius: 4px; overflow-x: auto; border: 1px solid #e9ecef; font-size: 0.9em;"></pre>
+            </div>
+        </div>
+
         <!-- 메인 콘텐츠 -->
         <div class="main-content">
             <!-- 모드 선택 라디오 버튼 -->

@@ -17,6 +17,10 @@
 ### 🤖 **AI 기능 (OpenAI API 키 필요)**
 - **AI 자동 매핑**: 지능형 필드 자동 연결
 
+### 🔗 **플랫폼 연동 (NEW!)**
+- **런모아 플랫폼 Webhook**: 실시간 주문 데이터 자동 수신
+- **완전 자동화**: 주문 발생 → 발주서 생성 → 이메일 전송 (0클릭!)
+
 ## 🛠️ 설치 및 실행
 
 ### 1. 프로젝트 클론
@@ -45,6 +49,14 @@ SUPABASE_ANON_KEY=your-supabase-anon-key
 # Gmail 설정 (메일 전송용)
 GMAIL_USER=your-email@gmail.com
 GMAIL_APP_PASSWORD=your-app-password
+
+# ============== 런모아 플랫폼 연동 (신규!) ==============
+
+# Webhook API 키 (런모아 → AutoOrder 자동 전송용)
+WEBHOOK_API_KEY=your-secure-webhook-api-key-12345
+
+# Webhook 이메일 수신자 (기본값: GMAIL_USER와 동일)
+WEBHOOK_EMAIL_RECIPIENT=orders@yourcompany.com
 
 # ============== 선택사항 ==============
 
@@ -83,6 +95,7 @@ http://localhost:3000
 - **첫 사용**: 수동 매핑으로 템플릿 생성
 - **반복 사용**: 저장된 템플릿 활용
 - **고급 사용**: OpenAI API 키 설정 후 AI 자동 매핑
+- **🔥 런모아 연동**: 플랫폼에서 완전 자동화 (아래 가이드 참고)
 
 ## 📂 프로젝트 구조
 
@@ -171,6 +184,8 @@ autorder-system/
 | `POST` | `/api/orders/generate` | 발주서 생성 |
 | `GET` | `/api/orders/download/:fileName` | 발주서 다운로드 |
 | `POST` | `/api/email/send` | 이메일 전송 |
+| **`POST`** | **`/api/webhook/orders`** | **🔗 런모아 주문 데이터 자동 수신** |
+| **`GET`** | **`/api/webhook/status`** | **🔗 Webhook API 상태 확인** |
 
 ## 🚨 문제 해결
 
@@ -191,6 +206,108 @@ autorder-system/
 ## 🎯 목표
 
 **"올리고 → 바꾸고 → 보내면 끝"** - 3Click으로 완성되는 자동화
+
+## 🔗 런모아 플랫폼 연동 가이드
+
+### 📋 **런모아 담당자에게 전달할 정보**
+
+```
+📍 API URL: https://autorder-system.onrender.com/api/webhook/orders
+🔄 HTTP 방식: POST
+🔐 인증 방법: Authorization: Bearer YOUR_WEBHOOK_API_KEY
+📤 Content-Type: application/json
+📥 응답 형식: JSON (성공/실패 여부)
+```
+
+### 🔧 **연동 설정 단계**
+
+#### 1. **API 키 생성**
+```bash
+# 강력한 API 키 생성 (예시)
+WEBHOOK_API_KEY=runmoa_2024_secure_key_abc123def456
+```
+
+#### 2. **환경변수 설정**
+```env
+# .env 파일에 추가
+WEBHOOK_API_KEY=runmoa_2024_secure_key_abc123def456
+WEBHOOK_EMAIL_RECIPIENT=orders@yourcompany.com
+```
+
+#### 3. **런모아에 전달할 요청 형식**
+```json
+{
+  "order_id": "RM-20250110-001",
+  "customer_name": "김고객",
+  "customer_phone": "010-1234-5678",
+  "shipping_address": "서울시 강남구 테헤란로 123",
+  "products": [
+    {
+      "product_name": "남해 진인 멸치 1kg",
+      "quantity": 2,
+      "unit_price": 25000,
+      "total_price": 50000
+    }
+  ],
+  "order_date": "2025-01-10T15:30:00Z",
+  "total_amount": 50000
+}
+```
+
+#### 4. **응답 형식**
+```json
+{
+  "success": true,
+  "message": "주문이 성공적으로 처리되었습니다.",
+  "order_id": "RM-20250110-001",
+  "generated_file": "runmoa_order_RM-20250110-001_2025-01-10T15-30-00.xlsx",
+  "email_sent": true,
+  "processing_time": "1234ms",
+  "timestamp": "2025-01-10T15:30:01.234Z"
+}
+```
+
+### 🔥 **완전 자동화 플로우**
+
+```
+런모아 주문 발생 
+    ↓
+AutoOrder API 호출
+    ↓  
+발주서 자동 생성
+    ↓
+이메일 자동 전송
+    ↓
+✅ 완료! (0클릭)
+```
+
+### 🧪 **API 테스트**
+
+```bash
+# 상태 확인
+curl -X GET "https://autorder-system.onrender.com/api/webhook/status" \
+  -H "Authorization: Bearer your-webhook-api-key"
+
+# 주문 테스트
+curl -X POST "https://autorder-system.onrender.com/api/webhook/orders" \
+  -H "Authorization: Bearer your-webhook-api-key" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "order_id": "TEST-001",
+    "customer_name": "테스트고객",
+    "customer_phone": "010-1234-5678",
+    "shipping_address": "서울시 테스트구 테스트로 123",
+    "products": [
+      {
+        "product_name": "테스트 상품",
+        "quantity": 1,
+        "unit_price": 10000,
+        "total_price": 10000
+      }
+    ],
+    "total_amount": 10000
+  }'
+```
 
 ## 📄 라이선스
 

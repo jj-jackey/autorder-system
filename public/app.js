@@ -3575,3 +3575,267 @@ function addApiKeySetupButton() {
     
     document.body.appendChild(setupBtn);
 }
+
+// 🔗 ===== WEBHOOK 관리 기능 ===== 🔗
+
+// 📋 클립보드에 복사
+function copyToClipboard(elementId) {
+    const element = document.getElementById(elementId);
+    const text = element.textContent || element.value;
+    
+    navigator.clipboard.writeText(text).then(() => {
+        showAlert('success', '📋 클립보드에 복사되었습니다!');
+        
+        // 복사 버튼 시각적 피드백
+        const copyBtn = element.nextElementSibling;
+        if (copyBtn && copyBtn.classList.contains('copy-btn')) {
+            const originalText = copyBtn.textContent;
+            copyBtn.textContent = '✅';
+            copyBtn.style.background = '#28a745';
+            
+            setTimeout(() => {
+                copyBtn.textContent = originalText;
+                copyBtn.style.background = '#6c757d';
+            }, 2000);
+        }
+    }).catch(err => {
+        console.error('클립보드 복사 실패:', err);
+        showAlert('error', '클립보드 복사에 실패했습니다.');
+    });
+}
+
+// 🔍 Webhook API 상태 확인
+async function checkWebhookStatus() {
+    const statusIndicator = document.getElementById('apiKeyIndicator');
+    const statusText = document.getElementById('apiKeyText');
+    const statusContainer = document.getElementById('apiKeyStatus');
+    
+    try {
+        // 로딩 상태
+        statusIndicator.textContent = '⏳';
+        statusText.textContent = 'API 상태 확인 중...';
+        statusContainer.style.borderLeftColor = '#ffc107';
+        
+        console.log('🔍 Webhook API 상태 확인 중...');
+        
+        // 환경변수에서 API 키가 설정되어 있는지 서버에 확인
+        const response = await fetch('/api/webhook/status', {
+            method: 'GET',
+            headers: {
+                'Authorization': `Bearer dummy-key-for-check` // 더미 키로 테스트
+            }
+        });
+        
+        if (response.status === 500) {
+            // API 키가 서버에 설정되지 않음
+            statusIndicator.textContent = '❌';
+            statusText.textContent = 'WEBHOOK_API_KEY가 서버에 설정되지 않았습니다.';
+            statusContainer.style.borderLeftColor = '#dc3545';
+            showAlert('warning', '⚠️ WEBHOOK_API_KEY가 환경변수에 설정되지 않았습니다.\n\n서버 관리자가 다음을 설정해야 합니다:\nWEBHOOK_API_KEY=your-secure-api-key');
+        } else if (response.status === 401) {
+            // API 키는 설정되어 있지만 인증 실패 (정상)
+            statusIndicator.textContent = '✅';
+            statusText.textContent = 'Webhook API가 정상 작동 중입니다. (API 키 설정됨)';
+            statusContainer.style.borderLeftColor = '#28a745';
+            showAlert('success', '✅ Webhook API가 정상 작동 중입니다!\n\n런모아 담당자에게 API 정보를 전달할 수 있습니다.');
+        } else {
+            const result = await response.json();
+            if (result.success) {
+                statusIndicator.textContent = '✅';
+                statusText.textContent = `Webhook API 정상 작동 중 (v${result.version})`;
+                statusContainer.style.borderLeftColor = '#28a745';
+                showAlert('success', '✅ Webhook API가 정상 작동 중입니다!');
+            } else {
+                throw new Error(result.error || '알 수 없는 오류');
+            }
+        }
+        
+    } catch (error) {
+        console.error('❌ Webhook 상태 확인 실패:', error);
+        statusIndicator.textContent = '❌';
+        statusText.textContent = 'API 상태 확인 실패';
+        statusContainer.style.borderLeftColor = '#dc3545';
+        showAlert('error', '❌ Webhook API 상태 확인에 실패했습니다.\n\n' + error.message);
+    }
+}
+
+// 🧪 Webhook API 기본 테스트
+async function testWebhookAPI() {
+    try {
+        showLoading('Webhook API 연결 테스트 중...');
+        
+        // 기본 연결 테스트 (인증 없이)
+        const response = await fetch('/api/webhook/status');
+        
+        hideLoading();
+        
+        if (response.status === 500) {
+            showAlert('warning', '⚠️ WEBHOOK_API_KEY가 환경변수에 설정되지 않았습니다.\n\n서버 관리자에게 문의하세요.');
+        } else if (response.status === 401) {
+            showAlert('info', '🔐 Webhook API 엔드포인트가 정상적으로 응답합니다.\n\n실제 테스트를 위해서는 유효한 API 키가 필요합니다.');
+        } else {
+            const result = await response.json();
+            showAlert('success', '✅ Webhook API 연결 테스트 성공!\n\n' + JSON.stringify(result, null, 2));
+        }
+        
+    } catch (error) {
+        hideLoading();
+        console.error('❌ Webhook API 테스트 실패:', error);
+        showAlert('error', '❌ Webhook API 테스트에 실패했습니다.\n\n' + error.message);
+    }
+}
+
+// 📤 테스트 주문 전송
+async function sendTestOrder() {
+    const resultDiv = document.getElementById('webhookTestResult');
+    const resultContent = document.getElementById('testResultContent');
+    
+    try {
+        // 테스트 데이터 수집
+        const testData = {
+            order_id: document.getElementById('testOrderId').value,
+            customer_name: document.getElementById('testCustomerName').value,
+            customer_phone: '010-1234-5678',
+            shipping_address: '서울시 테스트구 테스트로 123',
+            products: [
+                {
+                    product_name: document.getElementById('testProductName').value,
+                    quantity: parseInt(document.getElementById('testQuantity').value) || 1,
+                    unit_price: parseInt(document.getElementById('testUnitPrice').value) || 10000,
+                    total_price: (parseInt(document.getElementById('testQuantity').value) || 1) * (parseInt(document.getElementById('testUnitPrice').value) || 10000)
+                }
+            ],
+            total_amount: (parseInt(document.getElementById('testQuantity').value) || 1) * (parseInt(document.getElementById('testUnitPrice').value) || 10000),
+            order_date: new Date().toISOString()
+        };
+        
+        console.log('📤 테스트 주문 데이터:', testData);
+        
+        showLoading('테스트 주문을 전송하고 있습니다...');
+        
+        // API 키 입력 요청
+        const apiKey = prompt('🔐 Webhook API 키를 입력하세요:\n\n(실제 운영 환경에서는 런모아 플랫폼이 자동으로 전송합니다)');
+        
+        if (!apiKey) {
+            hideLoading();
+            showAlert('info', '⚠️ API 키가 입력되지 않아 테스트를 취소합니다.');
+            return;
+        }
+        
+        // Webhook API 호출
+        const response = await fetch('/api/webhook/orders', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'Authorization': `Bearer ${apiKey}`
+            },
+            body: JSON.stringify(testData)
+        });
+        
+        const result = await response.json();
+        
+        hideLoading();
+        
+        // 결과 표시
+        resultContent.textContent = JSON.stringify(result, null, 2);
+        resultDiv.style.display = 'block';
+        
+        if (result.success) {
+            showAlert('success', `✅ 테스트 주문 처리 성공!\n\n주문번호: ${result.order_id}\n생성된 파일: ${result.generated_file}\n이메일 전송: ${result.email_sent ? '성공' : '실패'}\n처리 시간: ${result.processing_time}`);
+        } else {
+            showAlert('error', `❌ 테스트 주문 처리 실패:\n\n${result.error}\n\n상세 정보: ${result.details || 'N/A'}`);
+        }
+        
+        // 결과 영역으로 스크롤
+        resultDiv.scrollIntoView({ behavior: 'smooth' });
+        
+    } catch (error) {
+        hideLoading();
+        console.error('❌ 테스트 주문 전송 실패:', error);
+        showAlert('error', '❌ 테스트 주문 전송 중 오류가 발생했습니다.\n\n' + error.message);
+        
+        // 오류 결과도 표시
+        resultContent.textContent = `오류: ${error.message}\n\n스택: ${error.stack}`;
+        resultDiv.style.display = 'block';
+    }
+}
+
+// 🌐 현재 환경에 맞는 Webhook URL 설정
+function updateWebhookUrl() {
+    const webhookUrlElement = document.getElementById('webhookUrl');
+    if (webhookUrlElement) {
+        const currentOrigin = window.location.origin;
+        const webhookUrl = `${currentOrigin}/api/webhook/orders`;
+        webhookUrlElement.textContent = webhookUrl;
+        
+        console.log('🔗 Webhook URL 설정 완료:', webhookUrl);
+        
+        // 환경 표시
+        const isLocalhost = currentOrigin.includes('localhost') || currentOrigin.includes('127.0.0.1');
+        if (isLocalhost) {
+            webhookUrlElement.style.background = '#e3f2fd';
+            webhookUrlElement.style.color = '#1976d2';
+            webhookUrlElement.title = '로컬 개발 환경';
+        } else {
+            webhookUrlElement.style.background = '#e8f5e8';
+            webhookUrlElement.style.color = '#2e7d32';
+            webhookUrlElement.title = '프로덕션 환경';
+        }
+    }
+}
+
+// 페이지 로드 시 초기화
+document.addEventListener('DOMContentLoaded', function() {
+    // 1. URL 설정 (즉시)
+    updateWebhookUrl();
+    
+    // 2. 관리자 권한 확인 및 Webhook 섹션 표시 여부 결정
+    checkAdminAccessForWebhook();
+    
+    // 3. Webhook 상태 확인 (2초 후, 관리자인 경우에만)
+    setTimeout(() => {
+        const webhookSection = document.getElementById('webhookManagement');
+        if (webhookSection && webhookSection.style.display !== 'none') {
+            checkWebhookStatus();
+        }
+    }, 2000);
+});
+
+// 🔐 관리자 권한 확인 및 Webhook 섹션 표시
+async function checkAdminAccessForWebhook() {
+    try {
+        console.log('🔍 관리자 권한 확인 중...');
+        
+        // 인증 상태 확인
+        const response = await fetch('/api/auth/check');
+        const authStatus = await response.json();
+        
+        const webhookSection = document.getElementById('webhookManagement');
+        
+        if (authStatus.showWebhookManagement) {
+            // 관리자 + 개발환경 (또는 강제 표시) → Webhook 관리 표시
+            console.log('✅ Webhook 관리 섹션 표시 허용:', {
+                isAdmin: authStatus.isAdmin,
+                isDevelopment: authStatus.isDevelopment,
+                showWebhookManagement: authStatus.showWebhookManagement
+            });
+            webhookSection.style.display = 'block';
+        } else {
+            // 프로덕션 환경 또는 일반 사용자 → Webhook 관리 완전 숨김 (보안)
+            console.log('🔒 Webhook 관리 섹션 숨김 (보안):', {
+                isAdmin: authStatus.isAdmin,
+                isDevelopment: authStatus.isDevelopment,
+                reason: authStatus.isAdmin ? '프로덕션 환경' : '관리자 권한 없음'
+            });
+            webhookSection.style.display = 'none';
+        }
+        
+    } catch (error) {
+        console.error('❌ 관리자 권한 확인 실패:', error);
+        // 오류 시 보안상 숨김
+        const webhookSection = document.getElementById('webhookManagement');
+        if (webhookSection) {
+            webhookSection.style.display = 'none';
+        }
+    }
+}

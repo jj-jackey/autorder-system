@@ -157,10 +157,17 @@ router.get('/check', (req, res) => {
     const isAdmin = req.session.isAdmin === true;
     const authenticated = true; // 기본적으로 인증된 상태로 간주 (API 키 없이도 사용 가능)
     
+    // Webhook 관리 섹션 표시 여부 결정 (보안 강화)
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const forceShowWebhook = process.env.SHOW_WEBHOOK_MANAGEMENT === 'true';
+    const showWebhookManagement = (isDevelopment || forceShowWebhook) && isAdmin;
+    
     console.log('🔍 인증 상태 확인:', {
       authenticated,
       hasApiKey,
       isAdmin,
+      isDevelopment,
+      showWebhookManagement,
       sessionId: req.session.id,
       username: req.session.username
     });
@@ -170,12 +177,64 @@ router.get('/check', (req, res) => {
       hasApiKey, // AI 기능 사용 가능 여부
       authenticatedAt: req.session.authenticatedAt || new Date().toISOString(),
       isAdmin,
-      username: req.session.username || null
+      username: req.session.username || null,
+      showWebhookManagement, // Webhook 관리 섹션 표시 여부
+      isDevelopment // 개발 환경 여부
     });
     
   } catch (error) {
     console.error('❌ 인증 상태 확인 오류:', error);
-    res.json({ authenticated: true, hasApiKey: false, isAdmin: false });
+    res.json({ 
+      authenticated: true, 
+      hasApiKey: false, 
+      isAdmin: false, 
+      showWebhookManagement: false,
+      isDevelopment: false
+    });
+  }
+});
+
+// 🔍 인증 상태 확인 (별칭 - 하위 호환성)
+router.get('/status', (req, res) => {
+  try {
+    const hasApiKey = !!req.session.openaiApiKey;
+    const isAdmin = req.session.isAdmin === true;
+    const authenticated = true; // 기본적으로 인증된 상태로 간주 (API 키 없이도 사용 가능)
+    
+    // Webhook 관리 섹션 표시 여부 결정 (보안 강화)
+    const isDevelopment = process.env.NODE_ENV !== 'production';
+    const forceShowWebhook = process.env.SHOW_WEBHOOK_MANAGEMENT === 'true';
+    const showWebhookManagement = (isDevelopment || forceShowWebhook) && isAdmin;
+    
+    console.log('🔍 인증 상태 확인 (status):', {
+      authenticated,
+      hasApiKey,
+      isAdmin,
+      isDevelopment,
+      showWebhookManagement,
+      sessionId: req.session.id,
+      username: req.session.username
+    });
+    
+    res.json({
+      authenticated,
+      hasApiKey, // AI 기능 사용 가능 여부
+      authenticatedAt: req.session.authenticatedAt || new Date().toISOString(),
+      isAdmin,
+      username: req.session.username || null,
+      showWebhookManagement, // Webhook 관리 섹션 표시 여부
+      isDevelopment // 개발 환경 여부
+    });
+    
+  } catch (error) {
+    console.error('❌ 인증 상태 확인 오류 (status):', error);
+    res.json({ 
+      authenticated: true, 
+      hasApiKey: false, 
+      isAdmin: false, 
+      showWebhookManagement: false,
+      isDevelopment: false
+    });
   }
 });
 

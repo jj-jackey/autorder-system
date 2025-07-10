@@ -135,12 +135,14 @@ const upload = multer({
 const orderRoutes = require('./routes/orders');
 const emailRoutes = require('./routes/email');
 const templateRoutes = require('./routes/templates');
+const webhookRoutes = require('./routes/webhook');
 const { router: authRoutes, requireAuth } = require('./routes/auth');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/templates', templateRoutes);
+app.use('/api/webhook', webhookRoutes);
 
 // 홈페이지 라우트 - OpenAI API 키 없이도 사용 가능
 app.get('/', (req, res) => {
