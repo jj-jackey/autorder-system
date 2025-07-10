@@ -4,13 +4,18 @@
 
 ## ✨ 주요 기능
 
+**💡 OpenAI API 키 없이도 모든 핵심 기능을 사용할 수 있습니다!**
+
+### 🚀 **기본 기능 (API 키 불필요)**
 - **📁 파일 업로드**: Excel(.xlsx, .xls), CSV 파일 지원
 - **👀 데이터 미리보기**: 업로드된 파일의 상위 20행 확인
-- **🔄 필드 매핑**: 드래그 앤 드롭으로 주문서-발주서 컬럼 연결
-- **🤖 AI 자동 매핑**: OpenAI API를 활용한 지능형 필드 자동 매핑
-- **📋 발주서 생성**: 템플릿 기반 표준 발주서 자동 생성
+- **🔄 수동 매핑**: 드래그 앤 드롭으로 주문서-발주서 컬럼 연결
+- **📋 템플릿 사용**: 저장된 템플릿으로 즉시 발주서 생성
 - **📧 이메일 전송**: 즉시/예약 전송 옵션
 - **☁️ 클라우드 스토리지**: Supabase Storage를 통한 영구 파일 저장
+
+### 🤖 **AI 기능 (OpenAI API 키 필요)**
+- **AI 자동 매핑**: 지능형 필드 자동 연결
 
 ## 🛠️ 설치 및 실행
 
@@ -37,16 +42,19 @@ PORT=3000
 SUPABASE_URL=https://your-project-id.supabase.co
 SUPABASE_ANON_KEY=your-supabase-anon-key
 
-# OpenAI API 설정 (AI 매핑용 - 선택사항)
+# Gmail 설정 (메일 전송용)
+GMAIL_USER=your-email@gmail.com
+GMAIL_APP_PASSWORD=your-app-password
+
+# ============== 선택사항 ==============
+
+# OpenAI API 설정 (AI 자동 매핑용 - 선택사항)
+# 💡 이 설정이 없어도 모든 핵심 기능을 사용할 수 있습니다!
 OPENAI_API_KEY=sk-proj-your-openai-api-key
 
 # 관리자 계정 설정 (선택사항)
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=your-secure-password
-
-# Gmail 설정 (메일 전송용)
-GMAIL_USER=your-email@gmail.com
-GMAIL_APP_PASSWORD=your-app-password
 ```
 
 ### 4. 서버 실행
@@ -62,6 +70,19 @@ npm start
 ```
 http://localhost:3000
 ```
+
+## 🚀 빠른 시작 (API 키 없이)
+
+**OpenAI API 키 없이도 바로 사용할 수 있습니다!**
+
+1. **웹페이지 접속**: `http://localhost:3000`
+2. **"📋 API 키 없이 계속하기" 클릭**
+3. **파일 업로드** → **수동 매핑** → **발주서 생성** → **완료!**
+
+### 💡 추천 사용 방법
+- **첫 사용**: 수동 매핑으로 템플릿 생성
+- **반복 사용**: 저장된 템플릿 활용
+- **고급 사용**: OpenAI API 키 설정 후 AI 자동 매핑
 
 ## 📂 프로젝트 구조
 
@@ -162,9 +183,10 @@ autorder-system/
 - Gmail 앱 비밀번호 확인
 - 환경 변수 설정 확인
 
-### AI 매핑 실패
-- OpenAI API 키 확인
+### AI 자동 매핑 사용하고 싶은 경우
+- OpenAI API 키 설정 필요 (선택사항)
 - API 사용량 한도 확인
+- **💡 AI 매핑 없이도 수동 매핑과 템플릿으로 모든 기능 사용 가능!**
 
 ## 🎯 목표
 

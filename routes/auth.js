@@ -27,29 +27,33 @@ router.post('/admin-login', async (req, res) => {
       });
     }
     
-    // 환경변수에서 OpenAI API 키 확인
+    // 환경변수에서 OpenAI API 키 확인 (선택사항)
     const systemApiKey = process.env.OPENAI_API_KEY;
-    if (!systemApiKey) {
-      return res.status(500).json({
-        success: false,
-        error: '시스템 OpenAI API 키가 설정되지 않았습니다. 관리자에게 문의하세요.'
-      });
-    }
     
     // 관리자 세션 설정
     req.session.isAdmin = true;
-    req.session.openaiApiKey = systemApiKey;
     req.session.authenticated = true;
     req.session.authenticatedAt = new Date().toISOString();
     req.session.username = username;
+    
+    // OpenAI API 키가 있으면 설정 (AI 기능 사용 가능)
+    if (systemApiKey) {
+      req.session.openaiApiKey = systemApiKey;
+      console.log('✅ 시스템 OpenAI API 키 설정됨 - AI 기능 사용 가능');
+    } else {
+      console.log('⚠️ 시스템 OpenAI API 키 없음 - AI 기능 제외하고 사용 가능');
+    }
     
     console.log('✅ 관리자 로그인 성공');
     
     res.json({
       success: true,
-      message: '관리자로 성공적으로 로그인되었습니다.',
+      message: systemApiKey 
+        ? '관리자로 성공적으로 로그인되었습니다. AI 기능 사용 가능합니다.'
+        : '관리자로 성공적으로 로그인되었습니다. (AI 기능 제외)',
       authenticatedAt: req.session.authenticatedAt,
-      isAdmin: true
+      isAdmin: true,
+      hasApiKey: !!systemApiKey
     });
     
   } catch (error) {
@@ -149,27 +153,29 @@ router.post('/verify', async (req, res) => {
 // 🔍 인증 상태 확인
 router.get('/check', (req, res) => {
   try {
-    const authenticated = req.session.authenticated === true && req.session.openaiApiKey;
+    const hasApiKey = !!req.session.openaiApiKey;
     const isAdmin = req.session.isAdmin === true;
+    const authenticated = true; // 기본적으로 인증된 상태로 간주 (API 키 없이도 사용 가능)
     
     console.log('🔍 인증 상태 확인:', {
       authenticated,
+      hasApiKey,
       isAdmin,
       sessionId: req.session.id,
-      hasApiKey: !!req.session.openaiApiKey,
       username: req.session.username
     });
     
     res.json({
       authenticated,
-      authenticatedAt: req.session.authenticatedAt || null,
+      hasApiKey, // AI 기능 사용 가능 여부
+      authenticatedAt: req.session.authenticatedAt || new Date().toISOString(),
       isAdmin,
       username: req.session.username || null
     });
     
   } catch (error) {
     console.error('❌ 인증 상태 확인 오류:', error);
-    res.json({ authenticated: false, isAdmin: false });
+    res.json({ authenticated: true, hasApiKey: false, isAdmin: false });
   }
 });
 
@@ -203,7 +209,7 @@ router.post('/logout', (req, res) => {
   }
 });
 
-// 🛡️ 인증 미들웨어
+// 🛡️ AI 기능 전용 인증 미들웨어 (AI 매핑에만 사용)
 function requireAuth(req, res, next) {
   if (req.session.authenticated && req.session.openaiApiKey) {
     return next();
@@ -213,7 +219,7 @@ function requireAuth(req, res, next) {
   if (req.path.startsWith('/api/')) {
     return res.status(401).json({
       success: false,
-      error: 'API 키 인증이 필요합니다.',
+      error: 'AI 자동 매핑 기능을 사용하려면 OpenAI API 키 인증이 필요합니다.',
       requireAuth: true
     });
   }

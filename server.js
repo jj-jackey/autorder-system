@@ -142,34 +142,16 @@ app.use('/api/orders', orderRoutes);
 app.use('/api/email', emailRoutes);
 app.use('/api/templates', templateRoutes);
 
-// 홈페이지 라우트 - 인증 상태에 따라 분기
+// 홈페이지 라우트 - OpenAI API 키 없이도 사용 가능
 app.get('/', (req, res) => {
-  // 인증 상태 확인
-  const authenticated = req.session.authenticated === true && req.session.openaiApiKey;
-  
-  if (authenticated) {
-    // 인증된 경우 메인 페이지 표시
-    console.log('✅ 인증된 사용자 - index.html 제공');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  } else {
-    // 인증되지 않은 경우 인증 페이지 표시
-    console.log('🔐 인증되지 않은 사용자 - auth.html 제공');
-    res.sendFile(path.join(__dirname, 'public', 'auth.html'));
-  }
+  console.log('🏠 메인 페이지 접근 - API 키 없이도 사용 가능');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// index.html 직접 접근 보호
+// index.html 직접 접근 허용
 app.get('/index.html', (req, res) => {
-  // 인증 상태 확인
-  const authenticated = req.session.authenticated === true && req.session.openaiApiKey;
-  
-  if (authenticated) {
-    console.log('✅ 인증된 사용자 - index.html 직접 접근 허용');
-    res.sendFile(path.join(__dirname, 'public', 'index.html'));
-  } else {
-    console.log('🔐 인증되지 않은 사용자 - auth.html로 리다이렉트');
-    res.redirect('/');
-  }
+  console.log('📄 index.html 직접 접근 - API 키 없이도 사용 가능');
+  res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 // 에러 핸들링

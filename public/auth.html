@@ -229,6 +229,25 @@
             border-color: #667eea;
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
+        
+        .skip-btn {
+            background: linear-gradient(135deg, #6c757d 0%, #495057 100%);
+            color: white;
+            border: none;
+            padding: 10px 25px;
+            border-radius: 20px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            box-shadow: 0 3px 10px rgba(108, 117, 125, 0.3);
+        }
+        
+        .skip-btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 5px 15px rgba(108, 117, 125, 0.4);
+            background: linear-gradient(135deg, #5a6268 0%, #343a40 100%);
+        }
     </style>
 </head>
 <body>
@@ -246,9 +265,20 @@
         <!-- API 키 로그인 폼 -->
         <div id="apiForm" class="auth-form active">
             <div class="info-box">
-                <div class="info-title">🤖 OpenAI API 키 필요</div>
+                <div class="info-title">🤖 OpenAI API 키 설정 (선택사항)</div>
                 <div class="info-text">
-                    AI 자동 매핑 기능을 사용하기 위해 OpenAI API 키가 필요합니다.<br>
+                    <strong>💡 API 키 없이도 모든 핵심 기능을 사용할 수 있습니다!</strong><br><br>
+                    
+                    <strong>API 키 없이 사용 가능한 기능:</strong><br>
+                    ✅ 파일 업로드 및 미리보기<br>
+                    ✅ 수동 드래그앤드롭 매핑<br>
+                    ✅ 저장된 템플릿 사용<br>
+                    ✅ 발주서 생성 및 다운로드<br>
+                    ✅ 이메일 전송<br><br>
+                    
+                    <strong>API 키가 있으면 추가로 사용 가능:</strong><br>
+                    🤖 AI 자동 매핑 (필드 자동 연결)<br><br>
+                    
                     API 키는 안전하게 세션에만 저장되며, 서버에 영구 저장되지 않습니다.
                 </div>
                 <div class="api-key-example">예시: sk-proj-xxxxxxx</div>
@@ -261,8 +291,7 @@
                         type="password" 
                         id="apiKey" 
                         class="api-key-input" 
-                        placeholder="sk-proj-로 시작하는 API 키를 입력하세요"
-                        required
+                        placeholder="sk-proj-로 시작하는 API 키를 입력하세요 (선택사항)"
                         value=""
                     >
                 </div>
@@ -270,8 +299,14 @@
                 <div id="statusMessage" class="status-message"></div>
                 
                 <button type="submit" id="verifyBtn" class="verify-btn">
-                    API 키 검증 및 로그인
+                    🚀 시작하기
                 </button>
+                
+                <div style="text-align: center; margin-top: 15px;">
+                    <button type="button" id="skipApiBtn" class="skip-btn">
+                        📋 API 키 없이 계속하기
+                    </button>
+                </div>
             </form>
         </div>
         
@@ -339,8 +374,12 @@
             const statusMessage = document.getElementById('statusMessage');
             const verifyBtn = document.getElementById('verifyBtn');
             
+            // API 키가 없으면 "API 키 없이 계속하기"와 동일한 동작
             if (!apiKey) {
-                showMessage('API 키를 입력해주세요.', 'error');
+                showMessage('✅ API 키 없이 시스템을 사용합니다. 메인 페이지로 이동합니다...', 'success');
+                setTimeout(() => {
+                    window.location.href = '/';
+                }, 1500);
                 return;
             }
             
@@ -373,15 +412,23 @@
                 } else {
                     showMessage(`❌ ${result.error}`, 'error');
                     verifyBtn.disabled = false;
-                    verifyBtn.innerHTML = 'API 키 검증 및 로그인';
+                    verifyBtn.innerHTML = '🚀 시작하기';
                 }
 
             } catch (error) {
                 console.error('인증 오류:', error);
                 showMessage('❌ 네트워크 오류가 발생했습니다. 다시 시도해주세요.', 'error');
                 verifyBtn.disabled = false;
-                verifyBtn.innerHTML = 'API 키 검증 및 로그인';
+                verifyBtn.innerHTML = '🚀 시작하기';
             }
+        });
+        
+        // API 키 없이 계속하기 버튼 이벤트
+        document.getElementById('skipApiBtn').addEventListener('click', () => {
+            showMessage('✅ API 키 없이 시스템을 사용합니다. 메인 페이지로 이동합니다...', 'success');
+            setTimeout(() => {
+                window.location.href = '/';
+            }, 1500);
         });
         
         function showMessage(message, type, isAdmin = false) {
@@ -454,17 +501,22 @@
             }
         });
         
-        // 페이지 로드 시 이미 인증된 상태인지 확인
+        // 페이지 로드 시 인증 상태 확인 (API 키 설정이 목적이면 리다이렉트 안함)
         window.addEventListener('load', async () => {
             try {
                 const response = await fetch('/api/auth/check');
                 const result = await response.json();
                 
-                if (result.authenticated) {
-                    showMessage('이미 인증된 상태입니다. 메인 페이지로 이동합니다...', 'success');
+                // API 키가 이미 있는 경우에만 리다이렉트
+                // API 키가 없으면 설정을 위해 이 페이지에 머물러야 함
+                if (result.authenticated && result.hasApiKey) {
+                    showMessage('이미 API 키가 설정되어 있습니다. 메인 페이지로 이동합니다...', 'success');
                     setTimeout(() => {
                         window.location.href = '/';
                     }, 1000);
+                } else if (result.authenticated && !result.hasApiKey) {
+                    // API 키가 없는 경우 설정을 위해 페이지에 머무름
+                    showMessage('💡 현재 수동/템플릿 모드로 사용 중입니다. API 키를 설정하면 AI 자동 매핑을 사용할 수 있습니다.', 'loading');
                 }
             } catch (error) {
                 // 인증 확인 실패는 무시 (정상적인 상황)

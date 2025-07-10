@@ -9,7 +9,7 @@ let supplierFileHeaders = [];
 
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', async function() {
-    // 🔐 인증 상태 확인 (가장 먼저 실행)
+    // 🔐 인증 상태 확인 (API 키 없이도 사용 가능)
     await checkAuthenticationStatus();
     
     initializeApp();
@@ -491,6 +491,12 @@ function updateGenerateOrderButton() {
 
 // AI 자동 매핑
 async function aiAutoMapping() {
+    // OpenAI API 키 체크
+    if (!window.hasOpenAIKey) {
+        showAlert('warning', '🤖 AI 자동 매핑 기능을 사용하려면 OpenAI API 키가 필요합니다.\n\n💡 대신 수동으로 드래그앤드롭 매핑을 사용하거나 저장된 템플릿을 이용해보세요!');
+        return;
+    }
+    
     const isDirectMode = window.isDirectInputMode === true;
     
     // 디버깅: 현재 상태 확인
@@ -2535,7 +2541,7 @@ function cancelDirectInput() {
     console.log('🔄 직접 입력 취소: 모든 상태 초기화 완료');
 }
 
-// 🔐 인증 상태 확인 함수
+// 🔐 인증 상태 확인 함수 (OpenAI API 키 선택적)
 async function checkAuthenticationStatus() {
     try {
         console.log('🔍 인증 상태 확인 중...');
@@ -2543,23 +2549,29 @@ async function checkAuthenticationStatus() {
         const response = await fetch('/api/auth/check');
         const result = await response.json();
         
-        if (!result.authenticated) {
-            console.log('❌ 인증되지 않음 - 인증 페이지로 리디렉션');
-            window.location.href = '/auth.html';
-            return false;
-        }
+        console.log('✅ 시스템 접근 가능:', {
+            hasApiKey: result.hasApiKey,
+            isAdmin: result.isAdmin,
+            username: result.username
+        });
         
-        console.log('✅ 인증 확인됨:', result.authenticatedAt);
+        // 전역 변수에 API 키 상태 저장
+        window.hasOpenAIKey = result.hasApiKey;
         
-        // 인증 상태 표시 (선택사항)
-        addAuthenticationIndicator(result.authenticatedAt, result.isAdmin, result.username);
+        // 인증 상태 표시
+        addAuthenticationIndicator(result.authenticatedAt, result.isAdmin, result.username, result.hasApiKey);
+        
+        // AI 기능 버튼 상태 업데이트
+        updateAIFeatureButtons(result.hasApiKey);
         
         return true;
         
     } catch (error) {
         console.error('❌ 인증 상태 확인 오류:', error);
-        // 네트워크 오류 등의 경우 일단 진행 (서버 문제일 수 있음)
-        console.log('⚠️ 인증 확인 실패 - 계속 진행');
+        // 네트워크 오류 등의 경우 일단 진행
+        console.log('⚠️ 인증 확인 실패 - API 키 없이 진행');
+        window.hasOpenAIKey = false;
+        updateAIFeatureButtons(false);
         return true;
     }
 }
@@ -3448,4 +3460,118 @@ function updateMappingUI(matchedFields) {
             }
         });
     });
+}
+
+// 🤖 AI 기능 버튼 상태 업데이트
+function updateAIFeatureButtons(hasApiKey) {
+    const aiMappingBtn = document.querySelector('button[onclick="aiAutoMapping()"]');
+    
+    if (aiMappingBtn) {
+        if (hasApiKey) {
+            aiMappingBtn.style.opacity = '1';
+            aiMappingBtn.style.cursor = 'pointer';
+            aiMappingBtn.disabled = false;
+            aiMappingBtn.title = 'AI가 자동으로 필드를 매핑합니다';
+        } else {
+            aiMappingBtn.style.opacity = '0.6';
+            aiMappingBtn.style.cursor = 'not-allowed';
+            aiMappingBtn.disabled = false; // 클릭은 가능하지만 경고 메시지 표시
+            aiMappingBtn.title = 'OpenAI API 키가 필요합니다. 클릭하면 안내를 확인할 수 있습니다.';
+        }
+    }
+}
+
+// 🔐 인증 상태 표시 (개선된 버전)
+function addAuthenticationIndicator(authenticatedAt, isAdmin, username, hasApiKey) {
+    // 기존 표시기 제거
+    const existingIndicator = document.querySelector('.auth-indicator');
+    if (existingIndicator) {
+        existingIndicator.remove();
+    }
+    
+    const indicator = document.createElement('div');
+    indicator.className = 'auth-indicator';
+    indicator.style.cssText = `
+        position: fixed;
+        top: 10px;
+        right: 10px;
+        background: ${hasApiKey ? 'linear-gradient(135deg, #28a745 0%, #20c997 100%)' : 'linear-gradient(135deg, #6c757d 0%, #495057 100%)'};
+        color: white;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 1000;
+        user-select: none;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    `;
+    
+    const statusIcon = hasApiKey ? '🤖' : '📋';
+    const statusText = hasApiKey ? 'AI 기능 사용 가능' : '수동/템플릿 모드';
+    const userInfo = isAdmin ? ` (관리자${username ? `: ${username}` : ''})` : '';
+    
+    indicator.innerHTML = `${statusIcon} ${statusText}${userInfo}`;
+    
+    // 클릭 시 API 키 설정 안내 또는 상태 정보 표시
+    indicator.addEventListener('click', () => {
+        if (hasApiKey) {
+            showAlert('info', `✅ OpenAI API 키가 설정되어 있습니다.\n🤖 AI 자동 매핑 기능을 사용할 수 있습니다.\n📅 인증 시간: ${new Date(authenticatedAt).toLocaleString()}`);
+        } else {
+            showAlert('info', `📋 현재 수동/템플릿 모드로 사용 중입니다.\n\n🤖 AI 자동 매핑을 사용하려면:\n1. 우측 상단 "API 키 설정" 클릭\n2. OpenAI API 키 입력\n\n💡 API 키 없이도 모든 핵심 기능을 사용할 수 있습니다!`);
+        }
+    });
+    
+    document.body.appendChild(indicator);
+    
+    // API 키 설정 버튼 추가
+    if (!hasApiKey) {
+        addApiKeySetupButton();
+    }
+}
+
+// 🔑 API 키 설정 버튼 추가
+function addApiKeySetupButton() {
+    // 기존 버튼 제거
+    const existingBtn = document.querySelector('.api-key-setup-btn');
+    if (existingBtn) {
+        existingBtn.remove();
+    }
+    
+    const setupBtn = document.createElement('button');
+    setupBtn.className = 'api-key-setup-btn';
+    setupBtn.style.cssText = `
+        position: fixed;
+        top: 50px;
+        right: 10px;
+        background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%);
+        color: white;
+        border: none;
+        padding: 8px 15px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 500;
+        box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        z-index: 999;
+        cursor: pointer;
+        transition: all 0.3s ease;
+    `;
+    
+    setupBtn.innerHTML = '🔑 API 키 설정';
+    setupBtn.title = 'OpenAI API 키를 설정하여 AI 자동 매핑 기능을 사용하세요';
+    
+    setupBtn.addEventListener('click', () => {
+        window.location.href = '/auth.html';
+    });
+    
+    setupBtn.addEventListener('mouseenter', () => {
+        setupBtn.style.transform = 'scale(1.05)';
+    });
+    
+    setupBtn.addEventListener('mouseleave', () => {
+        setupBtn.style.transform = 'scale(1)';
+    });
+    
+    document.body.appendChild(setupBtn);
 }
