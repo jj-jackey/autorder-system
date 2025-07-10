@@ -1,0 +1,16 @@
+﻿{
+  "order_id": "R202507100001",
+  "customer_name": "김테스트", 
+  "products": [
+    {
+      "product_name": "유기농 쌀 10kg",
+      "quantity": 2,
+      "unit_price": 22500,
+      "total_price": 45000
+    }
+  ],
+  "total_amount": 45000,
+  "order_date": "2025-07-10T00:00:00Z",
+  "customer_phone": "010-1234-5678",
+  "shipping_address": "서울 강남구 테헤란로 123, 101동 1001호"
+}

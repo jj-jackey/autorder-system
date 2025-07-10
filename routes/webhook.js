@@ -155,18 +155,51 @@ function validateOrderData(data) {
       });
     }
   } else {
-    // 단일 주문 형식 (기존 호환성)
-    const requiredFields = [
-      '주문_번호',
-      '상품명', 
-      '주문자_이름'
-    ];
+    // 단일 주문 형식 (기존 호환성 - 영어/한글 모두 지원)
     
-    requiredFields.forEach(field => {
-      if (!data[field]) {
-        errors.push(`${field}는 필수 필드입니다.`);
+    // 영어 필드명 형식 검증
+    if (data.order_id || data.customer_name || data.products) {
+      const requiredFields = [
+        'order_id',
+        'customer_name', 
+        'products'
+      ];
+      
+      requiredFields.forEach(field => {
+        if (!data[field]) {
+          errors.push(`${field}는 필수 필드입니다.`);
+        }
+      });
+      
+      // 상품 배열 검증
+      if (data.products && Array.isArray(data.products)) {
+        if (data.products.length === 0) {
+          errors.push('상품 목록이 비어있습니다.');
+        } else {
+          data.products.forEach((product, index) => {
+            if (!product.product_name) {
+              errors.push(`상품 ${index + 1}: product_name이 필요합니다.`);
+            }
+            if (!product.quantity || product.quantity <= 0) {
+              errors.push(`상품 ${index + 1}: 유효한 quantity가 필요합니다.`);
+            }
+          });
+        }
       }
-    });
+    } else {
+      // 한글 필드명 형식 검증  
+      const requiredFields = [
+        '주문_번호',
+        '상품명', 
+        '주문자_이름'
+      ];
+      
+      requiredFields.forEach(field => {
+        if (!data[field]) {
+          errors.push(`${field}는 필수 필드입니다.`);
+        }
+      });
+    }
   }
   
   return {
@@ -206,28 +239,56 @@ function standardizeOrderData(orderData) {
       처리일시: new Date().toISOString()
     }));
   } else {
-    // 단일 주문 형식 (기존 호환성)
-    orders = [{
-      주문번호: orderData.주문_번호,
-      상품명: orderData.상품명,
-      주문금액: orderData.주문금액 || 0,
-      주문일자: orderData.주문일자 || new Date().toLocaleDateString('ko-KR'),
-      SKU: orderData.SKU || '',
-      옵션: orderData.옵션 || '',
-      수량: orderData.수량 || 1,
-      주문자이름: orderData.주문자_이름,
-      주문자연락처: orderData.주문자_연락처 || '',
-      주문자이메일: orderData.주문자_이메일 || '',
-      배송정보: orderData.배송정보 || '',
-      발송일자: orderData.발송일자 || '',
-      주문상태: orderData.주문_상태 || '결제완료',
-      수취인이름: orderData.수취인_이름 || orderData.주문자_이름,
-      수취인연락처: orderData.수취인_연락처 || orderData.주문자_연락처,
-      개인통관번호: orderData.개인통관번호 || '',
-      
-      플랫폼: '런모아',
-      처리일시: new Date().toISOString()
-    }];
+    // 단일 주문 형식 (기존 호환성 - 영어/한글 모두 지원)
+    
+    if (orderData.order_id || orderData.customer_name || orderData.products) {
+      // 영어 필드명 형식 (기존 호환성)
+      const firstProduct = orderData.products?.[0] || {};
+      orders = [{
+        주문번호: orderData.order_id,
+        상품명: firstProduct.product_name || '',
+        주문금액: orderData.total_amount || firstProduct.total_price || 0,
+        주문일자: orderData.order_date ? new Date(orderData.order_date).toLocaleDateString('ko-KR') : new Date().toLocaleDateString('ko-KR'),
+        SKU: firstProduct.sku || '',
+        옵션: firstProduct.option || '',
+        수량: firstProduct.quantity || 1,
+        주문자이름: orderData.customer_name,
+        주문자연락처: orderData.customer_phone || '',
+        주문자이메일: orderData.customer_email || '',
+        배송정보: orderData.shipping_address || '',
+        발송일자: '',
+        주문상태: '결제완료',
+        수취인이름: orderData.customer_name,
+        수취인연락처: orderData.customer_phone || '',
+        개인통관번호: '',
+        
+        플랫폼: '런모아',
+        처리일시: new Date().toISOString()
+      }];
+    } else {
+      // 한글 필드명 형식
+      orders = [{
+        주문번호: orderData.주문_번호,
+        상품명: orderData.상품명,
+        주문금액: orderData.주문금액 || 0,
+        주문일자: orderData.주문일자 || new Date().toLocaleDateString('ko-KR'),
+        SKU: orderData.SKU || '',
+        옵션: orderData.옵션 || '',
+        수량: orderData.수량 || 1,
+        주문자이름: orderData.주문자_이름,
+        주문자연락처: orderData.주문자_연락처 || '',
+        주문자이메일: orderData.주문자_이메일 || '',
+        배송정보: orderData.배송정보 || '',
+        발송일자: orderData.발송일자 || '',
+        주문상태: orderData.주문_상태 || '결제완료',
+        수취인이름: orderData.수취인_이름 || orderData.주문자_이름,
+        수취인연락처: orderData.수취인_연락처 || orderData.주문자_연락처,
+        개인통관번호: orderData.개인통관번호 || '',
+        
+        플랫폼: '런모아',
+        처리일시: new Date().toISOString()
+      }];
+    }
   }
   
   console.log('🏷️ 런모아 → 표준 형식 변환 완료:', {
