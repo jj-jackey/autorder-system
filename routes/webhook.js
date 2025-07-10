@@ -615,6 +615,7 @@ function createMappingFromTemplate(template, standardizedData) {
     }
     
     console.log('🗺️ 템플릿 기반 매핑 규칙 생성:', template.name);
+    console.log('📋 템플릿 필드 목록:', Object.keys(template.supplierFieldMapping));
     
     const mappingRules = {};
     const supplierMapping = template.supplierFieldMapping;
@@ -662,22 +663,34 @@ function createMappingFromTemplate(template, standardizedData) {
       '주문금액': standardizedData.주문금액,
       '발송일자': standardizedData.발송일자,
       
-      // 영어 필드명도 지원  
-      'order_id': standardizedData.주문번호,
-      'customer_name': standardizedData.주문자이름,
-      'product_name': standardizedData.상품명,
-      'quantity': standardizedData.수량,
-      'amount': standardizedData.주문금액,
-      'phone': standardizedData.주문자연락처,
-      'address': standardizedData.배송정보
+              // 영어 필드명도 지원  
+        'order_id': standardizedData.주문번호,
+        'customer_name': standardizedData.주문자이름,
+        'product_name': standardizedData.상품명,
+        'quantity': standardizedData.수량,
+        'amount': standardizedData.주문금액,
+        'phone': standardizedData.주문자연락처,
+        'address': standardizedData.배송정보,
+        
+        // 누락된 필드들 추가
+        '발송일자': new Date().toLocaleDateString('ko-KR'),
+        '상품명2': standardizedData.상품명,
+        '배송지': standardizedData.배송정보,
+        '전화번호': standardizedData.주문자연락처,
+        '고객이름': standardizedData.주문자이름
     };
     
-    // 공급업체 필드 매핑 적용 (개선된 오류 처리)
+    // 공급업체 필드 매핑 적용 (개선된 오류 처리 + 디버깅)
     Object.keys(supplierMapping).forEach(supplierField => {
       const sourceField = supplierMapping[supplierField];
       
+      console.log(`🔍 매핑 시도: "${sourceField}" → "${supplierField}"`);
+      console.log(`📊 사용 가능한 데이터:`, Object.keys(dataMapping));
+      console.log(`💾 실제 값: "${dataMapping[sourceField]}"`);
+      
       if (dataMapping[sourceField] !== undefined && dataMapping[sourceField] !== null && dataMapping[sourceField] !== '') {
         mappingRules[supplierField] = dataMapping[sourceField];
+        console.log(`✅ 매핑 성공: ${sourceField} = "${dataMapping[sourceField]}"`);
       } else {
         // 기본값 설정
         let defaultValue = '';
@@ -689,9 +702,17 @@ function createMappingFromTemplate(template, standardizedData) {
           defaultValue = 'N/A';
         } else if (supplierField.includes('옵션')) {
           defaultValue = '기본';
+        } else if (supplierField.includes('상품명')) {
+          defaultValue = standardizedData.상품명 || '상품명 없음';
+        } else if (supplierField.includes('배송') || supplierField.includes('주소')) {
+          defaultValue = standardizedData.배송정보 || '주소 없음';
+        } else if (supplierField.includes('연락처') || supplierField.includes('전화')) {
+          defaultValue = standardizedData.주문자연락처 || '연락처 없음';
+        } else if (supplierField.includes('이름')) {
+          defaultValue = standardizedData.주문자이름 || '이름 없음';
         }
         
-        console.warn(`⚠️ 매핑할 데이터를 찾을 수 없음: ${sourceField} → ${supplierField}, 기본값 적용: ${defaultValue}`);
+        console.warn(`⚠️ 매핑 실패: ${sourceField} → ${supplierField}, 기본값 적용: "${defaultValue}"`);
         mappingRules[supplierField] = defaultValue;
       }
     });
