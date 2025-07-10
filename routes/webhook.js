@@ -129,39 +129,44 @@ router.post('/orders', authenticateWebhookAPI, async (req, res) => {
   }
 });
 
-// 📋 주문 데이터 검증 함수
+// 📋 주문 데이터 검증 함수 (실제 런모아 형식에 맞춤)
 function validateOrderData(data) {
   const errors = [];
   
-  // 필수 필드 검증
-  const requiredFields = [
-    'order_id',
-    'customer_name', 
-    'products'
-  ];
-  
-  requiredFields.forEach(field => {
-    if (!data[field]) {
-      errors.push(`${field}는 필수 필드입니다.`);
-    }
-  });
-  
-  // 상품 배열 검증
-  if (data.products && Array.isArray(data.products)) {
-    if (data.products.length === 0) {
-      errors.push('상품 목록이 비어있습니다.');
+  // 런모아 실제 형식 검증
+  if (data.orders && Array.isArray(data.orders)) {
+    // 다중 주문 형식 (실제 런모아 엑셀 형식)
+    if (data.orders.length === 0) {
+      errors.push('주문 목록이 비어있습니다.');
     } else {
-      data.products.forEach((product, index) => {
-        if (!product.product_name) {
-          errors.push(`상품 ${index + 1}: product_name이 필요합니다.`);
+      data.orders.forEach((order, index) => {
+        if (!order.주문_번호) {
+          errors.push(`주문 ${index + 1}: 주문_번호가 필요합니다.`);
         }
-        if (!product.quantity || product.quantity <= 0) {
-          errors.push(`상품 ${index + 1}: 유효한 quantity가 필요합니다.`);
+        if (!order.상품명) {
+          errors.push(`주문 ${index + 1}: 상품명이 필요합니다.`);
+        }
+        if (!order.주문자_이름) {
+          errors.push(`주문 ${index + 1}: 주문자_이름이 필요합니다.`);
+        }
+        if (!order.수량 || order.수량 <= 0) {
+          errors.push(`주문 ${index + 1}: 유효한 수량이 필요합니다.`);
         }
       });
     }
   } else {
-    errors.push('products는 배열이어야 합니다.');
+    // 단일 주문 형식 (기존 호환성)
+    const requiredFields = [
+      '주문_번호',
+      '상품명', 
+      '주문자_이름'
+    ];
+    
+    requiredFields.forEach(field => {
+      if (!data[field]) {
+        errors.push(`${field}는 필수 필드입니다.`);
+      }
+    });
   }
   
   return {
@@ -170,40 +175,69 @@ function validateOrderData(data) {
   };
 }
 
-// 🔄 런모아 데이터를 표준 형식으로 변환
+// 🔄 런모아 데이터를 표준 형식으로 변환 (실제 엑셀 형식 기준)
 function standardizeOrderData(orderData) {
-  // 런모아 형식 → AutoOrder 내부 형식으로 변환
-  const standardized = {
-    // 주문 정보
-    주문번호: orderData.order_id,
-    주문일자: orderData.order_date ? new Date(orderData.order_date).toLocaleDateString('ko-KR') : new Date().toLocaleDateString('ko-KR'),
-    
-    // 고객 정보
-    고객명: orderData.customer_name,
-    연락처: orderData.customer_phone || '',
-    주소: orderData.shipping_address || '',
-    
-    // 상품 정보 (첫 번째 상품을 대표로 사용, 나중에 다중 상품 지원 확장 가능)
-    상품명: orderData.products[0]?.product_name || '',
-    수량: orderData.products[0]?.quantity || 0,
-    단가: orderData.products[0]?.unit_price || 0,
-    총금액: orderData.total_amount || 0,
-    
-    // 메타데이터
-    플랫폼: '런모아',
-    처리일시: new Date().toISOString(),
-    
-    // 모든 상품 정보 (상세 처리용)
-    상품목록: orderData.products
-  };
+  let orders = [];
+  
+  // 다중 주문 형식인지 단일 주문 형식인지 확인
+  if (orderData.orders && Array.isArray(orderData.orders)) {
+    // 실제 런모아 엑셀 형식 (다중 주문)
+    orders = orderData.orders.map(order => ({
+      // 실제 런모아 엑셀 컬럼 매핑
+      주문번호: order.주문_번호,
+      상품명: order.상품명,
+      주문금액: order.주문금액 || 0,
+      주문일자: order.주문일자 || new Date().toLocaleDateString('ko-KR'),
+      SKU: order.SKU || '',
+      옵션: order.옵션 || '',
+      수량: order.수량 || 1,
+      주문자이름: order.주문자_이름,
+      주문자연락처: order.주문자_연락처 || '',
+      주문자이메일: order.주문자_이메일 || '',
+      배송정보: order.배송정보 || '',
+      발송일자: order.발송일자 || '',
+      주문상태: order.주문_상태 || '결제완료',
+      수취인이름: order.수취인_이름 || order.주문자_이름,
+      수취인연락처: order.수취인_연락처 || order.주문자_연락처,
+      개인통관번호: order.개인통관번호 || '',
+      
+      // 메타데이터
+      플랫폼: '런모아',
+      처리일시: new Date().toISOString()
+    }));
+  } else {
+    // 단일 주문 형식 (기존 호환성)
+    orders = [{
+      주문번호: orderData.주문_번호,
+      상품명: orderData.상품명,
+      주문금액: orderData.주문금액 || 0,
+      주문일자: orderData.주문일자 || new Date().toLocaleDateString('ko-KR'),
+      SKU: orderData.SKU || '',
+      옵션: orderData.옵션 || '',
+      수량: orderData.수량 || 1,
+      주문자이름: orderData.주문자_이름,
+      주문자연락처: orderData.주문자_연락처 || '',
+      주문자이메일: orderData.주문자_이메일 || '',
+      배송정보: orderData.배송정보 || '',
+      발송일자: orderData.발송일자 || '',
+      주문상태: orderData.주문_상태 || '결제완료',
+      수취인이름: orderData.수취인_이름 || orderData.주문자_이름,
+      수취인연락처: orderData.수취인_연락처 || orderData.주문자_연락처,
+      개인통관번호: orderData.개인통관번호 || '',
+      
+      플랫폼: '런모아',
+      처리일시: new Date().toISOString()
+    }];
+  }
   
   console.log('🏷️ 런모아 → 표준 형식 변환 완료:', {
-    원본_상품수: orderData.products.length,
-    변환된_대표상품: standardized.상품명,
-    총금액: standardized.총금액
+    주문수: orders.length,
+    첫번째_주문번호: orders[0]?.주문번호,
+    첫번째_상품명: orders[0]?.상품명
   });
   
-  return standardized;
+  // 첫 번째 주문을 대표로 반환 (기존 시스템 호환성)
+  return orders[0] || {};
 }
 
 // 🔄 Webhook 주문 자동 처리
@@ -338,17 +372,24 @@ async function sendWebhookEmail(fileName, orderData) {
         <h3>📋 주문 정보</h3>
         <ul>
           <li><strong>주문번호:</strong> ${orderData.주문번호}</li>
-          <li><strong>고객명:</strong> ${orderData.고객명}</li>
+          <li><strong>주문자명:</strong> ${orderData.주문자이름}</li>
           <li><strong>상품명:</strong> ${orderData.상품명}</li>
+          <li><strong>옵션:</strong> ${orderData.옵션}</li>
           <li><strong>수량:</strong> ${orderData.수량}</li>
-          <li><strong>총금액:</strong> ${(orderData.총금액 || 0).toLocaleString()}원</li>
+          <li><strong>주문금액:</strong> ${(orderData.주문금액 || 0).toLocaleString()}원</li>
+          <li><strong>주문일자:</strong> ${orderData.주문일자}</li>
+          <li><strong>SKU:</strong> ${orderData.SKU}</li>
           <li><strong>처리일시:</strong> ${new Date().toLocaleString('ko-KR')}</li>
         </ul>
         
         <h3>📧 배송 정보</h3>
         <ul>
-          <li><strong>연락처:</strong> ${orderData.연락처}</li>
-          <li><strong>주소:</strong> ${orderData.주소}</li>
+          <li><strong>주문자 연락처:</strong> ${orderData.주문자연락처}</li>
+          <li><strong>주문자 이메일:</strong> ${orderData.주문자이메일}</li>
+          <li><strong>배송정보:</strong> ${orderData.배송정보}</li>
+          <li><strong>수취인:</strong> ${orderData.수취인이름}</li>
+          <li><strong>수취인 연락처:</strong> ${orderData.수취인연락처}</li>
+          <li><strong>주문상태:</strong> ${orderData.주문상태}</li>
         </ul>
         
         <hr>
@@ -518,8 +559,9 @@ function createMappingFromTemplate(template, standardizedData) {
     const supplierMapping = template.supplierFieldMapping;
     const fixedFields = template.fixedFields || {};
     
-    // 표준화된 데이터와 템플릿 매핑 연결
+    // 표준화된 데이터와 템플릿 매핑 연결 (실제 런모아 형식 지원)
     const dataMapping = {
+      // 기존 형식 (기본값)
       '상품명': standardizedData.상품명,
       '수량': standardizedData.수량,
       '단가': standardizedData.단가,
@@ -530,7 +572,22 @@ function createMappingFromTemplate(template, standardizedData) {
       '주문일자': standardizedData.주문일자,
       '주문번호': standardizedData.주문번호,
       '플랫폼': standardizedData.플랫폼,
-      '처리일시': standardizedData.처리일시
+      '처리일시': standardizedData.처리일시,
+      
+      // 실제 런모아 형식 (공백 포함)
+      '주문 번호': standardizedData.주문번호,
+      '주문자 이름': standardizedData.주문자이름,
+      '수취인 이름': standardizedData.수취인이름,
+      '주문 상태': standardizedData.주문상태,
+      '주문자 연락처': standardizedData.주문자연락처,
+      '주문자 이메일': standardizedData.주문자이메일,
+      '수취인 연락처': standardizedData.수취인연락처,
+      '배송정보': standardizedData.배송정보,
+      '주문금액': standardizedData.주문금액,
+      '발송일자': standardizedData.발송일자,
+      'SKU': standardizedData.SKU,
+      '옵션': standardizedData.옵션,
+      '개인통관번호': standardizedData.개인통관번호
     };
     
     // 공급업체 필드 매핑 적용
