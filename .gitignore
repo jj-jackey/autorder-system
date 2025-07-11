@@ -109,4 +109,9 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-*~ 
+*~
+
+# 코드 난독화 관련
+*.original.js
+*.backup.js
+public/*.min.js 
