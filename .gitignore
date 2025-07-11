@@ -114,4 +114,5 @@ Thumbs.db
 # 코드 난독화 관련
 *.original.js
 *.backup.js
+*.production-backup.js
 public/*.min.js 

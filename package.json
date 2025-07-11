@@ -8,9 +8,11 @@
     "dev": "nodemon server.js",
     "test": "jest",
     "obfuscate": "node scripts/obfuscate.js",
+    "obfuscate:prod": "node scripts/obfuscate-production.js",
     "restore": "node scripts/restore.js",
     "minify": "node scripts/minify.js",
-    "build": "npm run obfuscate && npm run minify"
+    "build": "npm run obfuscate && npm run minify",
+    "build:prod": "npm run obfuscate:prod"
   },
   "keywords": [
     "order",
