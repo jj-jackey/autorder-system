@@ -10,6 +10,7 @@ const {
   deleteEmailTemplate,
   saveEmailHistory,
   loadEmailHistory,
+  deleteEmailHistory,
   clearEmailHistory
 } = require('../utils/supabase');
 
@@ -349,57 +350,99 @@ router.get('/history', async (req, res) => {
   }
 });
 
-// 📧 선택된 이력 삭제
-router.delete('/history/delete', (req, res) => {
+// 📧 선택된 이력 삭제 (Supabase ID 또는 인덱스 방식)
+router.delete('/history/delete', async (req, res) => {
   try {
-    const { indices } = req.body;
+    const { historyIds, indices } = req.body;
     
-    if (!Array.isArray(indices) || indices.length === 0) {
-      return res.status(400).json({ 
-        error: '삭제할 항목의 인덱스가 필요합니다.' 
-      });
+    console.log('🗑️ 이메일 이력 삭제 요청:', { historyIds, indices });
+    
+    let successCount = 0;
+    let failCount = 0;
+    const errors = [];
+    
+    // Supabase ID 기반 삭제
+    if (historyIds && Array.isArray(historyIds) && historyIds.length > 0) {
+      console.log('🆔 Supabase ID로 삭제:', historyIds.length + '개');
+      
+      for (const historyId of historyIds) {
+        const deleteResult = await deleteEmailHistory(historyId);
+        
+        if (deleteResult.success) {
+          successCount++;
+        } else {
+          failCount++;
+          errors.push(`ID ${historyId}: ${deleteResult.error}`);
+        }
+      }
     }
-
-    const historyPath = path.join(__dirname, '../file/email-history.json');
     
-    if (!fs.existsSync(historyPath)) {
-      return res.status(404).json({ 
-        error: '이력 파일을 찾을 수 없습니다.' 
-      });
-    }
-
-    let history = JSON.parse(fs.readFileSync(historyPath, 'utf8'));
-    
-    // 내림차순 정렬된 상태에서의 인덱스이므로 정렬 먼저
-    history = history.sort((a, b) => new Date(b.sentAt) - new Date(a.sentAt));
-    
-    // 인덱스를 내림차순으로 정렬하여 뒤쪽부터 삭제 (인덱스 오류 방지)
-    const sortedIndices = indices.sort((a, b) => b - a);
-    
-    // 유효한 인덱스인지 확인
-    for (const index of sortedIndices) {
-      if (index < 0 || index >= history.length) {
-        return res.status(400).json({ 
-          error: `유효하지 않은 인덱스입니다: ${index}` 
+    // 인덱스 기반 삭제 (fallback)
+    if (indices && Array.isArray(indices) && indices.length > 0) {
+      console.log('📍 인덱스로 삭제:', indices.length + '개');
+      
+      // 히스토리 전체 조회
+      const historyResult = await loadEmailHistory(100);
+      
+      if (historyResult.success && historyResult.data) {
+        const history = historyResult.data;
+        
+        // 인덱스를 내림차순으로 정렬하여 뒤쪽부터 삭제
+        const sortedIndices = indices.sort((a, b) => b - a);
+        
+        for (const index of sortedIndices) {
+          if (index >= 0 && index < history.length) {
+            const item = history[index];
+            if (item && item.id) {
+              const deleteResult = await deleteEmailHistory(item.id);
+              
+              if (deleteResult.success) {
+                successCount++;
+              } else {
+                failCount++;
+                errors.push(`Index ${index} (ID ${item.id}): ${deleteResult.error}`);
+              }
+            } else {
+              failCount++;
+              errors.push(`Index ${index}: 유효하지 않은 항목`);
+            }
+          } else {
+            failCount++;
+            errors.push(`Index ${index}: 범위를 벗어남`);
+          }
+        }
+      } else {
+        return res.status(500).json({
+          error: '히스토리 조회 실패',
+          details: historyResult.error
         });
       }
     }
     
-    // 선택된 항목들 삭제
-    for (const index of sortedIndices) {
-      history.splice(index, 1);
+    if (!historyIds && !indices) {
+      return res.status(400).json({ 
+        error: '삭제할 항목의 ID 또는 인덱스가 필요합니다.' 
+      });
     }
     
-    fs.writeFileSync(historyPath, JSON.stringify(history, null, 2));
-    
-    res.json({
-      success: true,
-      message: `${indices.length}개 항목이 삭제되었습니다.`,
-      deletedCount: indices.length
-    });
+    if (failCount === 0) {
+      res.json({
+        success: true,
+        message: `${successCount}개 항목이 삭제되었습니다.`,
+        deletedCount: successCount
+      });
+    } else {
+      res.status(500).json({
+        success: false,
+        error: `${failCount}개 항목 삭제 실패 (${successCount}개 성공)`,
+        details: errors,
+        deletedCount: successCount,
+        failedCount: failCount
+      });
+    }
 
   } catch (error) {
-    console.error('이력 삭제 오류:', error);
+    console.error('❌ 이력 삭제 오류:', error);
     res.status(500).json({ 
       error: '이력 삭제 중 오류가 발생했습니다.', 
       details: error.message 

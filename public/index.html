@@ -959,6 +959,20 @@
                 <div id="savedTemplateMode" class="mode-container hidden">
                     <div class="upload-container">
                         <div class="upload-column">
+                            <div class="upload-area" id="uploadAreaTemplateMode">
+                                <div class="upload-icon">⬆</div>
+                                <h4>주문서 파일 업로드</h4>
+                                <p>또는 <strong>클릭</strong>하여 파일을 선택하세요</p>
+                                <p style="margin-top: 10px; color: #6c757d;">지원 형식: Excel (.xlsx, .xls), CSV (.csv)</p>
+                                <input type="file" id="fileInputTemplateMode" class="file-input" accept=".xlsx,.xls,.csv">
+                            </div>
+                            
+                            <div id="uploadResultTemplateMode" class="hidden">
+                                <div id="uploadAlertTemplateMode"></div>
+                            </div>
+                        </div>
+                        
+                        <div class="upload-column">
                             <div style="background: linear-gradient(145deg, #f3e5f5 0%, #e1bee7 100%); padding: 20px; border-radius: 8px; border: 2px solid #9c27b0;">
                                 <h4 style="color: #4a148c; margin-bottom: 15px; text-align: center;">💾 저장된 템플릿 선택</h4>
                                 
@@ -975,7 +989,7 @@
                                     </div>
                                     
                                     <div style="text-align: center; margin-top: 15px;">
-                                        <button onclick="refreshTemplateList()" class="btn" style="background: #9c27b0; color: white; font-size: 0.9em;">🔄 새로고침</button>
+                                        <button onclick="refreshTemplateList()" class="btn" style="background: #9c27b0; color: white; font-size: 0.9em;">🔄 최신 템플릿 불러오기</button>
                                     </div>
                                 </div>
                                 
@@ -985,19 +999,6 @@
                                     <p style="font-size: 0.9em; opacity: 0.8;">다른 모드에서 매핑 완료 후 템플릿으로 저장해보세요.</p>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="upload-column">
-                            <div class="upload-area" id="uploadAreaTemplateMode">
-                                <div class="upload-icon">⬆</div>
-                                <h4>주문서 파일 업로드</h4>
-                                <p>또는 <strong>클릭</strong>하여 파일을 선택하세요</p>
-                                <p style="margin-top: 10px; color: #6c757d;">지원 형식: Excel (.xlsx, .xls), CSV (.csv)</p>
-                                <input type="file" id="fileInputTemplateMode" class="file-input" accept=".xlsx,.xls,.csv">
-                            </div>
-                            
-                            <div id="uploadResultTemplateMode" class="hidden">
-                                <div id="uploadAlertTemplateMode"></div>
                             </div>
                             
                             <div id="selectedTemplateInfo" style="display: none; margin-top: 15px; padding: 15px; background: rgba(156, 39, 176, 0.1); border-radius: 8px; border: 1px solid #9c27b0;">
@@ -1066,33 +1067,43 @@
             <!-- 2단계: 필드 매핑 -->
             <div class="step hidden" id="step2">
                 <h3>STEP 2. 필드 매핑 설정</h3>
+                
+                <!-- 액션 버튼들 (제목 바로 아래로 이동) -->
+                <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; border: 1px solid #dee2e6;">
+                    <button class="btn" onclick="aiAutoMapping()" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%); margin-right: 10px;">
+                        🤖 AI 자동 매핑
+                    </button>
+                    <button class="btn" onclick="saveMapping()">매핑 저장</button>
+                    <button class="btn btn-success" onclick="generateOrder()" disabled style="opacity: 0.5; cursor: not-allowed;">발주서 생성</button>
+                    <button class="btn" onclick="restartProcess()" style="background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%); margin-left: 10px;">
+                        다시 시작
+                    </button>
+                </div>
+                
                 <p>주문서의 컬럼을 발주서 양식의 컬럼과 연결하세요.</p>
+                
+                <!-- 기능 안내 -->
+                <div style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin: 15px 0; border-left: 3px solid #6c757d;">
+                    <div style="color: #495057; font-size: 0.85em; line-height: 1.5;">
+                        • AI 자동 매핑은 API키 설정 후 활성화됩니다<br>
+                        • 매핑 저장 후 발주서 생성이 활성화됩니다
+                    </div>
+                </div>
                 
                 <div class="mapping-container">
                     <div class="field-list">
-                        <h5>SOURCE FIELDS</h5>
+                        <h5>원본 필드</h5>
                         <div id="sourceFields"></div>
                     </div>
                     
                     <div class="arrow">→</div>
                     
                     <div class="field-list">
-                        <h5>TARGET FIELDS</h5>
+                        <h5>대상 필드</h5>
                         <div id="targetFields">
                             <!-- 발주서 필드들이 동적으로 추가됩니다 -->
                         </div>
                     </div>
-                </div>
-                
-                <div style="text-align: center; margin-top: 20px;">
-                    <button class="btn" onclick="aiAutoMapping()" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%); margin-right: 10px;">
-                        🤖 AI AUTO MAPPING
-                    </button>
-                    <button class="btn" onclick="saveMapping()">SAVE MAPPING</button>
-                    <button class="btn btn-success" onclick="generateOrder()" disabled style="opacity: 0.5; cursor: not-allowed;">GENERATE ORDER</button>
-                    <button class="btn" onclick="restartProcess()" style="background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%); margin-left: 10px;">
-                        🔄 RESTART
-                    </button>
                 </div>
                 
                 <!-- 필수 필드 입력 폼 (필수 필드가 누락되었을 때만 표시) -->
@@ -1161,7 +1172,7 @@
                         <input type="datetime-local" id="scheduleTime" class="form-control">
                     </div>
                     
-                    <button class="btn btn-success" onclick="sendEmail()">SEND EMAIL</button>
+                    <button class="btn btn-success" onclick="sendEmail()">이메일 전송</button>
                 </div>
                 
                 <div id="emailResult"></div>
@@ -1169,7 +1180,7 @@
 
             <!-- 전송 이력 -->
             <div class="email-history">
-                <h3>TRANSMISSION HISTORY</h3>
+                <h3>전송 이력</h3>
                 <div class="history-controls">
                     <div class="control-group">
                         <label style="cursor: pointer; display: flex; align-items: center;">

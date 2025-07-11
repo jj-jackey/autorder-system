@@ -1164,6 +1164,9 @@ async function selectTemplate(templateId) {
             // 선택된 템플릿 정보 표시
             displaySelectedTemplateInfo(selectedTemplate);
             
+            // 파일 업로드 이벤트 리스너 재설정 (중요!)
+            setupSavedTemplateModeEvents();
+            
             // 파일 업로드 상태 확인하여 버튼 활성화
             updateTemplateProcessButton();
             
@@ -1339,7 +1342,10 @@ async function sendEmail() {
     
     try {
         console.log('📤 이메일 전송 시작');
-        showLoading('이메일을 전송하고 있습니다...');
+        
+        // 📊 진행바 시작
+        showProgress('이메일 데이터를 준비하고 있습니다...');
+        updateProgress(10, '이메일 데이터를 준비하고 있습니다...');
         
         const emailData = {
             to: emailTo,
@@ -1355,6 +1361,14 @@ async function sendEmail() {
         
         console.log('📋 전송할 이메일 데이터:', emailData);
         
+        // 📊 진행률 업데이트 (전송 방식에 따라 메시지 변경)
+        const isScheduled = sendOption === 'scheduled' && scheduleTime;
+        const progressMessage = isScheduled ? 
+            '이메일 예약을 설정하고 있습니다...' : 
+            '서버로 이메일을 전송하고 있습니다...';
+        
+        updateProgress(30, progressMessage);
+        
         const response = await fetch('/api/email/send', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -1363,10 +1377,36 @@ async function sendEmail() {
         
         console.log('📡 서버 응답 상태:', response.status, response.statusText);
         
+        // 📊 진행률 업데이트
+        const processMessage = isScheduled ? 
+            '예약 전송을 등록하고 있습니다...' : 
+            '서버에서 이메일을 처리하고 있습니다...';
+        
+        updateProgress(70, processMessage);
+        
         const result = await response.json();
         console.log('📋 서버 응답 결과:', result);
         
-        hideLoading();
+        // 📊 진행률 업데이트
+        const completingMessage = isScheduled ? 
+            '예약 전송 등록을 완료하고 있습니다...' : 
+            '이메일 전송을 완료하고 있습니다...';
+        
+        updateProgress(90, completingMessage);
+        
+        // 짧은 딜레이로 사용자가 진행률을 볼 수 있도록 함
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        const finalMessage = isScheduled ? 
+            '예약 전송 등록 완료!' : 
+            '이메일 전송 완료!';
+        
+        updateProgress(100, finalMessage);
+        
+        // 짧은 딜레이 후 진행바 숨김
+        setTimeout(() => {
+            hideProgress();
+        }, 1000);
         
         if (result.success) {
             console.log('✅ 이메일 전송 성공');
@@ -1391,7 +1431,7 @@ async function sendEmail() {
         }
         
     } catch (error) {
-        hideLoading();
+        hideProgress();
         console.error('❌ 이메일 전송 오류:', error);
         showEmailResult('error', '이메일 전송 중 오류가 발생했습니다: ' + error.message);
         
@@ -1422,7 +1462,7 @@ async function loadEmailHistory() {
         if (result.success && result.history.length > 0) {
             const historyList = document.getElementById('emailHistoryList');
             
-            historyList.innerHTML = result.history.slice(0, 10).map((item, index) => {
+            historyList.innerHTML = result.history.slice(0, 10).map((item, displayIndex) => {
                 const statusClass = item.status === 'success' ? '' : 'failed';
                 const statusIcon = item.status === 'success' ? '●' : '●';
                 
@@ -1431,10 +1471,16 @@ async function loadEmailHistory() {
                 const toEmail = item.to_email || item.to;
                 const errorMessage = item.error_message || item.error;
                 
+                // ID 또는 인덱스 사용 (Supabase ID가 없으면 인덱스로 fallback)
+                const historyId = item.id || `index_${displayIndex}`; // UUID 또는 인덱스 기반 ID
+                const isRealId = !!item.id; // 실제 DB ID인지 확인
+                
+                // ID 검증 완료
+                
                 return `
                     <div class="history-item ${statusClass}" style="display: flex; align-items: center; justify-content: space-between;">
                         <div style="display: flex; align-items: center; flex: 1;">
-                            <input type="checkbox" class="history-checkbox" data-index="${index}" onchange="updateDeleteButton()" style="margin-right: 10px;">
+                            <input type="checkbox" class="history-checkbox" data-id="${historyId}" data-is-real-id="${isRealId}" onchange="updateDeleteButton()" style="margin-right: 10px;">
                             <div style="flex: 1;">
                                 <div><strong><span style="color: ${item.status === 'success' ? '#28a745' : '#dc3545'}">${statusIcon}</span> ${toEmail || 'Unknown'}</strong></div>
                                 <div>${item.subject || 'No Subject'}</div>
@@ -1442,7 +1488,7 @@ async function loadEmailHistory() {
                                 ${errorMessage ? `<div style="color: #dc3545; font-size: 0.9em;">ERROR: ${errorMessage}</div>` : ''}
                             </div>
                         </div>
-                        <button class="btn" onclick="deleteSingleHistory(${index})" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); margin-left: 10px; padding: 5px 10px; font-size: 0.8em;">삭제</button>
+                        <button class="btn" onclick="deleteSingleHistory('${historyId}', ${isRealId})" style="background: linear-gradient(135deg, #dc3545 0%, #c82333 100%); margin-left: 10px; padding: 5px 10px; font-size: 0.8em;">삭제</button>
                     </div>
                 `;
             }).join('');
@@ -1757,7 +1803,7 @@ function updateDeleteButton() {
     }
 }
 
-// 선택된 이력 삭제
+// 선택된 이력 삭제 (Supabase ID 기반)
 async function deleteSelectedHistory() {
     const checkedBoxes = document.querySelectorAll('.history-checkbox:checked');
     
@@ -1773,12 +1819,31 @@ async function deleteSelectedHistory() {
     try {
         showLoading('선택된 이력을 삭제하고 있습니다...');
         
-        const indices = Array.from(checkedBoxes).map(checkbox => parseInt(checkbox.dataset.index));
+        // 체크박스에서 ID 수집 및 타입 구분
+        const checkboxData = Array.from(checkedBoxes).map(checkbox => ({
+            id: checkbox.dataset.id,
+            isRealId: checkbox.dataset.isRealId === 'true'
+        }));
+        
+        // 실제 ID와 인덱스로 분류
+        const realIds = checkboxData.filter(item => item.isRealId && !item.id.startsWith('index_')).map(item => item.id);
+        const indexIds = checkboxData.filter(item => !item.isRealId || item.id.startsWith('index_')).map(item => {
+            return item.id.startsWith('index_') ? parseInt(item.id.replace('index_', '')) : parseInt(item.id);
+        });
+        
+        // 요청 데이터 구성
+        let requestBody = {};
+        if (realIds.length > 0) {
+            requestBody.historyIds = realIds;
+        }
+        if (indexIds.length > 0) {
+            requestBody.indices = indexIds;
+        }
         
         const response = await fetch('/api/email/history/delete', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ indices })
+            body: JSON.stringify(requestBody)
         });
         
         const result = await response.json();
@@ -1786,7 +1851,8 @@ async function deleteSelectedHistory() {
         hideLoading();
         
         if (result.success) {
-            showAlert('success', `${indices.length}개 항목이 삭제되었습니다.`);
+            const totalCount = (realIds.length || 0) + (indexIds.length || 0);
+            showAlert('success', `${result.deletedCount || totalCount}개 항목이 삭제되었습니다.`);
             loadEmailHistory();
             updateDashboard();
         } else {
@@ -1800,8 +1866,8 @@ async function deleteSelectedHistory() {
     }
 }
 
-// 단일 이력 삭제
-async function deleteSingleHistory(index) {
+// 단일 이력 삭제 (Supabase ID 또는 인덱스 기반)
+async function deleteSingleHistory(historyId, isRealId = true) {
     if (!confirm('이 이력을 삭제하시겠습니까?')) {
         return;
     }
@@ -1809,10 +1875,22 @@ async function deleteSingleHistory(index) {
     try {
         showLoading('이력을 삭제하고 있습니다...');
         
+        let requestBody;
+        if (isRealId && !historyId.startsWith('index_')) {
+            // 실제 Supabase ID 사용
+            requestBody = { historyIds: [historyId] };
+        } else {
+            // 인덱스 기반 - 인덱스 추출
+            const index = historyId.startsWith('index_') ? 
+                parseInt(historyId.replace('index_', '')) : 
+                parseInt(historyId);
+            requestBody = { indices: [index] };
+        }
+        
         const response = await fetch('/api/email/history/delete', {
             method: 'DELETE',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ indices: [index] })
+            body: JSON.stringify(requestBody)
         });
         
         const result = await response.json();
@@ -2655,6 +2733,9 @@ function restartProcess() {
         orderFileHeaders = [];
         supplierFileHeaders = [];
         
+        // 템플릿 관련 변수 초기화
+        selectedTemplate = null;
+        
         // 세션 스토리지 초기화
         sessionStorage.setItem('mappingSaved', 'false');
         
@@ -2700,7 +2781,8 @@ function restartProcess() {
             'uploadResultOrderDefault',
             'uploadResultSupplierDefault',
             'uploadResultOrderSaved',
-            'uploadResultSupplierSaved'
+            'uploadResultSupplierSaved',
+            'uploadResultTemplateMode'
         ];
         
         uploadResultElements.forEach(elementId => {
@@ -2724,7 +2806,8 @@ function restartProcess() {
             'uploadAlertDirectMode',
             'uploadAlertDefaultMode',
             'uploadAlertSavedMode',
-            'uploadAlertSupplierDirectMode'
+            'uploadAlertSupplierDirectMode',
+            'uploadAlertTemplateMode'
         ];
         
         alertElements.forEach(elementId => {
@@ -2734,6 +2817,25 @@ function restartProcess() {
                 // 알림 요소는 숨기지 않음 (상위 컨테이너가 관리)
             }
         });
+        
+        // 선택된 템플릿 정보 숨기기 및 초기화
+        const selectedTemplateInfo = document.getElementById('selectedTemplateInfo');
+        if (selectedTemplateInfo) {
+            selectedTemplateInfo.style.display = 'none';
+        }
+        
+        const selectedTemplateDetails = document.getElementById('selectedTemplateDetails');
+        if (selectedTemplateDetails) {
+            selectedTemplateDetails.innerHTML = '';
+        }
+        
+        // 템플릿 처리 버튼 비활성화
+        const templateProcessBtn = document.getElementById('templateProcessBtn');
+        if (templateProcessBtn) {
+            templateProcessBtn.disabled = true;
+            templateProcessBtn.style.opacity = '0.5';
+            templateProcessBtn.style.cursor = 'not-allowed';
+        }
         
         // 모든 입력 폼 필드 초기화
         ['상품명', '연락처', '주소', '수량', '단가', '고객명'].forEach(field => {
@@ -2999,12 +3101,22 @@ function setupSavedTemplateModeEvents() {
     const fileInputTemplateMode = document.getElementById('fileInputTemplateMode');
     
     if (uploadAreaTemplateMode && fileInputTemplateMode) {
-        // 기존 이벤트 리스너 제거 후 새로 추가
-        uploadAreaTemplateMode.onclick = () => fileInputTemplateMode.click();
+        // 기존 이벤트 리스너 완전 제거
+        uploadAreaTemplateMode.onclick = null;
+        uploadAreaTemplateMode.removeEventListener('dragover', handleDragOver);
+        uploadAreaTemplateMode.removeEventListener('dragleave', handleDragLeave);
+        uploadAreaTemplateMode.removeEventListener('drop', handleDrop);
+        
+        // 파일 입력의 기존 이벤트도 제거 (복제된 요소로 교체)
+        const newFileInput = fileInputTemplateMode.cloneNode(true);
+        fileInputTemplateMode.parentNode.replaceChild(newFileInput, fileInputTemplateMode);
+        
+        // 새로운 이벤트 리스너 설정
+        uploadAreaTemplateMode.onclick = () => newFileInput.click();
         uploadAreaTemplateMode.addEventListener('dragover', handleDragOver);
         uploadAreaTemplateMode.addEventListener('dragleave', handleDragLeave);
         uploadAreaTemplateMode.addEventListener('drop', (e) => handleDrop(e, 'template-mode'));
-        fileInputTemplateMode.addEventListener('change', (e) => handleFileSelect(e, 'template-mode'));
+        newFileInput.addEventListener('change', (e) => handleFileSelect(e, 'template-mode'));
     }
 }
 
