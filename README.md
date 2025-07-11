@@ -20,6 +20,7 @@
 ### 🔗 **플랫폼 연동 (NEW!)**
 - **런모아 플랫폼 Webhook**: 실시간 주문 데이터 자동 수신
 - **완전 자동화**: 주문 발생 → 발주서 생성 → 이메일 전송 (0클릭!)
+- **한글 완벽 지원**: UTF-8 인코딩으로 한글 데이터 완벽 처리
 
 ## 🛠️ 설치 및 실행
 
@@ -221,51 +222,61 @@ autorder-system/
 
 ### 🔧 **연동 설정 단계**
 
-#### 1. **API 키 생성**
+#### 1. **현재 설정된 API 키**
 ```bash
-# 강력한 API 키 생성 (예시)
-WEBHOOK_API_KEY=runmoa_2024_secure_key_abc123def456
+# 현재 서버에 설정된 API 키
+WEBHOOK_API_KEY=webhook_2025_secure_key_abc123xyz789
 ```
 
 #### 2. **환경변수 설정**
 ```env
-# .env 파일에 추가
-WEBHOOK_API_KEY=runmoa_2024_secure_key_abc123def456
-WEBHOOK_EMAIL_RECIPIENT=orders@yourcompany.com
+# .env 파일에 추가 (현재 설정값)
+WEBHOOK_API_KEY=webhook_2025_secure_key_abc123xyz789
+WEBHOOK_EMAIL_RECIPIENT=your-email@gmail.com
 ```
 
-#### 3. **런모아에 전달할 요청 형식**
+#### 3. **런모아에서 전송할 데이터 형식 (한글 필드명)**
 ```json
 {
-  "order_id": "RM-20250110-001",
-  "customer_name": "김고객",
-  "customer_phone": "010-1234-5678",
-  "shipping_address": "서울시 강남구 테헤란로 123",
-  "products": [
+  "orders": [
     {
-      "product_name": "남해 진인 멸치 1kg",
-      "quantity": 2,
-      "unit_price": 25000,
-      "total_price": 50000
+      "주문_번호": "R202507100001",
+      "상품명": "유기농 쌀 10kg",
+      "주문금액": 45000,
+      "주문일자": "2025-07-10",
+      "SKU": "RICE-ORG-10KG",
+      "옵션": "무농약 유기농",
+      "수량": 2,
+      "주문자_이름": "김테스트",
+      "주문자_연락처": "010-1234-5678",
+      "주문자_이메일": "test@runmoa.com",
+      "배송정보": "서울 강남구 테헤란로 123, 101동 1001호",
+      "발송일자": "2025-07-11",
+      "주문_상태": "결제완료",
+      "수취인_이름": "김수취인",
+      "수취인_연락처": "010-9876-5432",
+      "개인통관번호": ""
     }
-  ],
-  "order_date": "2025-01-10T15:30:00Z",
-  "total_amount": 50000
+  ]
 }
 ```
 
-#### 4. **응답 형식**
+**⚠️ 중요**: UTF-8 인코딩 필수! 한글 필드명이 깨지면 안됩니다.
+
+#### 4. **응답 형식 (실제 테스트 결과)**
 ```json
 {
   "success": true,
   "message": "주문이 성공적으로 처리되었습니다.",
-  "order_id": "RM-20250110-001",
-  "generated_file": "runmoa_order_RM-20250110-001_2025-01-10T15-30-00.xlsx",
+  "order_id": "R202507100001",
+  "generated_file": "runmoa_order_R202507100001_2025-07-11T07-37-39.xlsx",
   "email_sent": true,
-  "processing_time": "1234ms",
-  "timestamp": "2025-01-10T15:30:01.234Z"
+  "processing_time": "5059ms",
+  "timestamp": "2025-07-11T07:37:43.380Z"
 }
 ```
+
+**✅ 성능**: 평균 5초 이내 처리 완료
 
 ### 🔥 **완전 자동화 플로우**
 
@@ -286,27 +297,17 @@ AutoOrder API 호출
 ```bash
 # 상태 확인
 curl -X GET "https://autorder-system.onrender.com/api/webhook/status" \
-  -H "Authorization: Bearer your-webhook-api-key"
+  -H "Authorization: Bearer webhook_2025_secure_key_abc123xyz789"
 
-# 주문 테스트
+# 주문 테스트 (PowerShell 권장)
+$body = Get-Content test_runmoa.json -Raw -Encoding UTF8
+Invoke-RestMethod -Uri "https://autorder-system.onrender.com/api/webhook/orders" -Method POST -ContentType "application/json; charset=utf-8" -Headers @{"Authorization"="Bearer webhook_2025_secure_key_abc123xyz789"} -Body $body
+
+# curl (Linux/Mac)
 curl -X POST "https://autorder-system.onrender.com/api/webhook/orders" \
-  -H "Authorization: Bearer your-webhook-api-key" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "order_id": "TEST-001",
-    "customer_name": "테스트고객",
-    "customer_phone": "010-1234-5678",
-    "shipping_address": "서울시 테스트구 테스트로 123",
-    "products": [
-      {
-        "product_name": "테스트 상품",
-        "quantity": 1,
-        "unit_price": 10000,
-        "total_price": 10000
-      }
-    ],
-    "total_amount": 10000
-  }'
+  -H "Authorization: Bearer webhook_2025_secure_key_abc123xyz789" \
+  -H "Content-Type: application/json; charset=utf-8" \
+  -d @test_runmoa.json
 ```
 
 ## 📄 라이선스

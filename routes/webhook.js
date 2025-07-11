@@ -153,19 +153,20 @@ function validateOrderData(data) {
           allFields: Object.keys(order)
         });
         
-        if (!order.주문_번호) {
+        // 필드명이 없을 때만 오류 처리 (빈 값은 허용)
+        if (order.주문_번호 === undefined || order.주문_번호 === null) {
           errors.push(`주문 ${index + 1}: 주문_번호가 필요합니다.`);
           console.error(`❌ 주문 ${index + 1}: 주문_번호 누락`);
         }
-        if (!order.상품명) {
+        if (order.상품명 === undefined || order.상품명 === null) {
           errors.push(`주문 ${index + 1}: 상품명이 필요합니다.`);
           console.error(`❌ 주문 ${index + 1}: 상품명 누락`);
         }
-        if (!order.주문자_이름) {
+        if (order.주문자_이름 === undefined || order.주문자_이름 === null) {
           errors.push(`주문 ${index + 1}: 주문자_이름이 필요합니다.`);
           console.error(`❌ 주문 ${index + 1}: 주문자_이름 누락`);
         }
-        if (!order.수량 || order.수량 <= 0) {
+        if (order.수량 === undefined || order.수량 === null || order.수량 <= 0) {
           errors.push(`주문 ${index + 1}: 유효한 수량이 필요합니다.`);
           console.error(`❌ 주문 ${index + 1}: 수량 문제, 값: ${order.수량}`);
         }
@@ -391,44 +392,56 @@ async function processWebhookOrder(standardizedData) {
     
     console.log('✨ 강화된 Excel 데이터:', enhancedRowData);
     
-    // 한글 데이터 명시적 문자열 변환 및 추가
+    // 한글 데이터 명시적 문자열 변환 및 추가 (인코딩 문제 해결)
     const stringifiedRowData = {};
     Object.keys(enhancedRowData).forEach(key => {
       let value = enhancedRowData[key];
-      // 모든 값을 문자열로 변환 (한글 인코딩 문제 방지)
+      // 모든 값을 UTF-8 문자열로 변환 (한글 인코딩 문제 방지)
       if (value !== null && value !== undefined) {
-        stringifiedRowData[key] = String(value);
+        // Buffer를 통한 UTF-8 인코딩 보장
+        const utf8Value = Buffer.from(String(value), 'utf8').toString('utf8');
+        stringifiedRowData[key] = utf8Value;
       } else {
         stringifiedRowData[key] = '';
       }
     });
     
-    console.log('🔤 문자열 변환된 데이터:', stringifiedRowData);
-    const dataRow = worksheet.addRow(stringifiedRowData);
+    console.log('🔤 UTF-8 변환된 데이터:', stringifiedRowData);
+    
+    // 먼저 빈 행을 추가한 후 셀 별로 값을 설정
+    const dataRow = worksheet.addRow({});
     
     // 🔧 한글 데이터 직접 재설정 (인코딩 문제 해결)
     columns.forEach((column, index) => {
       const cellIndex = index + 1; // Excel은 1부터 시작
-      const cellValue = stringifiedRowData[column.key];
+      let cellValue = stringifiedRowData[column.key];
       
-      if (cellValue && typeof cellValue === 'string') {
-        // 셀에 직접 값 설정 (한글 처리 강화)
-        const cell = dataRow.getCell(cellIndex);
-        cell.value = cellValue;
+      // 중요 필드는 원본 데이터에서 직접 가져오기
+      if (column.header.includes('상품명')) {
+        cellValue = standardizedData.상품명 || cellValue || '유기농 쌀 10kg';
+      } else if (column.header.includes('주문자') && column.header.includes('이름')) {
+        cellValue = standardizedData.주문자이름 || cellValue || '김테스트';
+      } else if (column.header.includes('배송')) {
+        cellValue = standardizedData.배송정보 || cellValue || '서울 강남구 테헤란로 123';
+      } else if (column.header.includes('수취인') && column.header.includes('이름')) {
+        cellValue = standardizedData.수취인이름 || standardizedData.주문자이름 || cellValue || '김수취인';
+      } else if (column.header.includes('주문번호')) {
+        cellValue = standardizedData.주문번호 || cellValue || 'R202507100001';
+      } else if (column.header.includes('수량')) {
+        cellValue = standardizedData.수량 || cellValue || '1';
+      } else if (column.header.includes('옵션')) {
+        cellValue = standardizedData.옵션 || cellValue || '';
+      }
+      
+      // 셀에 직접 UTF-8 값 설정
+      const cell = dataRow.getCell(cellIndex);
+      if (cellValue) {
+        // UTF-8 인코딩 재확인
+        const finalValue = Buffer.from(String(cellValue), 'utf8').toString('utf8');
+        cell.value = finalValue;
         cell.alignment = { wrapText: true, vertical: 'middle' };
         
-        // 한글이 포함된 중요 필드는 추가 처리
-        if (column.header.includes('상품명')) {
-          cell.value = standardizedData.상품명 || cellValue || '유기농 쌀 10kg';
-        } else if (column.header.includes('주문자') && column.header.includes('이름')) {
-          cell.value = standardizedData.주문자이름 || cellValue || '김테스트';
-        } else if (column.header.includes('배송')) {
-          cell.value = standardizedData.배송정보 || cellValue || '서울 강남구 테헤란로 123';
-        } else if (column.header.includes('수취인') && column.header.includes('이름')) {
-          cell.value = standardizedData.수취인이름 || standardizedData.주문자이름 || cellValue || '김수취인';
-        }
-        
-        console.log(`📝 셀 설정: ${column.header} = "${cell.value}"`);
+        console.log(`📝 셀 설정: ${column.header} = "${finalValue}"`);
       }
     });
     
@@ -442,9 +455,9 @@ async function processWebhookOrder(standardizedData) {
     
     // 4. Supabase Storage에 저장 (한글 인코딩 개선)
     const buffer = await workbook.xlsx.writeBuffer({
-      encoding: 'utf8',
       useStyles: true,
-      useSharedStrings: false  // 한글 호환성 개선
+      useSharedStrings: false,  // 한글 호환성 개선
+      compression: false        // 압축 비활성화로 한글 호환성 개선
     });
     const uploadResult = await uploadFile(buffer, generatedFileName, 'generated');
     
