@@ -351,13 +351,13 @@ async function processFile(file, type) {
             signal: currentUploadController.signal
         });
         
-        // 30초 타임아웃 설정
+        // 45초 타임아웃 설정 (render 환경 최적화)
         const timeoutId = setTimeout(() => {
             if (currentUploadController && !currentUploadController.signal.aborted) {
                 currentUploadController.abort();
-                showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
+                showAlert('error', '업로드 시간이 초과되었습니다. render 서버 처리 지연이 발생할 수 있습니다. 잠시 후 다시 시도해주세요.');
             }
-        }, 30000);
+        }, 45000);
         
         // 진행률과 실제 업로드 모두 완료될 때까지 대기
         const [_, response] = await Promise.all([progressPromise, uploadPromise]);
@@ -3909,13 +3909,13 @@ async function processFileForMode(file, type) {
             signal: currentUploadController.signal
         });
         
-        // 30초 타임아웃 설정
+        // 45초 타임아웃 설정 (render 환경 최적화)
         const timeoutId = setTimeout(() => {
             if (currentUploadController && !currentUploadController.signal.aborted) {
                 currentUploadController.abort();
-                showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
+                showAlert('error', '업로드 시간이 초과되었습니다. render 서버 처리 지연이 발생할 수 있습니다. 잠시 후 다시 시도해주세요.');
             }
-        }, 30000);
+        }, 45000);
         
         const result = await response.json();
         

@@ -315,7 +315,7 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
         
         // render 환경에서 타임아웃 적용
         const isProduction = process.env.NODE_ENV === 'production';
-        const timeout = isProduction ? 20000 : 60000; // production: 20초, dev: 60초
+        const timeout = isProduction ? 30000 : 60000; // production: 30초, dev: 60초
         
         const excelData = await Promise.race([
           readExcelFile(tempFilePath),
