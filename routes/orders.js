@@ -313,9 +313,13 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
         const { readExcelFile } = require('../utils/converter');
         console.log('🔄 Excel 파일 읽기 시작...');
         
-        // render 환경에서 타임아웃 적용
+        // 플랫폼별 타임아웃 적용
         const isProduction = process.env.NODE_ENV === 'production';
-        const timeout = isProduction ? 30000 : 60000; // production: 30초, dev: 60초
+        const isVercel = process.env.VERCEL === '1';
+        const isRender = process.env.RENDER === 'true';
+        
+        // Vercel: 20초, Render: 30초, 로컬: 60초
+        const timeout = isVercel ? 20000 : isRender ? 30000 : 60000;
         
         const excelData = await Promise.race([
           readExcelFile(tempFilePath),

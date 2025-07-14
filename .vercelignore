@@ -1,0 +1,46 @@
+# 개발 관련 파일
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# 업로드 폴더 (Supabase Storage 사용)
+uploads/
+
+# 개발 도구
+node_modules/
+.vscode/
+.idea/
+
+# 로그 파일
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# OS 파일
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# 테스트
+coverage/
+*.test.js
+
+# 임시 파일
+*.tmp
+*.temp
+
+# 스크립트 (빌드에 불필요)
+scripts/
+
+# 문서 (런타임에 불필요)
+*.md
+!README.md
+
+# Render 전용 설정
+render.yaml 

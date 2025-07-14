@@ -141,9 +141,13 @@ async function readExcelFile(filePath) {
     extension: fileExtension
   });
   
-  // render 환경에서 파일 크기 제한 (20MB)
+  // 플랫폼별 파일 크기 제한
   const isProduction = process.env.NODE_ENV === 'production';
-  const maxFileSize = isProduction ? 20 : 50;
+  const isVercel = process.env.VERCEL === '1';
+  const isRender = process.env.RENDER === 'true';
+  
+  // Vercel: 10MB, Render: 20MB, 로컬: 50MB
+  const maxFileSize = isVercel ? 10 : isRender ? 20 : 50;
   
   if (fileSizeMB > maxFileSize) {
     throw new Error(`파일 크기가 너무 큽니다. ${maxFileSize}MB 이하의 파일을 업로드해주세요. (현재: ${fileSizeMB.toFixed(1)}MB)`);
@@ -156,11 +160,12 @@ async function readExcelFile(filePath) {
     // production 환경에서는 더 엄격하게 처리
     if (isProduction) {
       try {
-        // 단일 시도만 수행 (타임아웃 10초)
+        // 플랫폼별 타임아웃: Vercel 5초, Render 10초
+        const xlsTimeout = isVercel ? 5000 : 10000;
         const result = await Promise.race([
           readExcelFileWithXLSXOptimized(filePath),
           new Promise((_, reject) => 
-            setTimeout(() => reject(new Error('XLS 파일 처리 시간 초과 (10초)')), 10000)
+            setTimeout(() => reject(new Error(`XLS 파일 처리 시간 초과 (${xlsTimeout/1000}초)`)), xlsTimeout)
           )
         ]);
         return result;
@@ -179,10 +184,12 @@ async function readExcelFile(filePath) {
   // XLSX 파일 또는 개발 환경에서의 XLS 파일 처리
   try {
     console.log('🔄 Excel 파일 읽기 시도...');
+    // 플랫폼별 타임아웃: Vercel 15초, Render 30초, 로컬 60초
+    const xlsxTimeout = isVercel ? 15000 : isRender ? 30000 : 60000;
     const result = await Promise.race([
       readExcelFileWithXLSX(filePath),
       new Promise((_, reject) => 
-        setTimeout(() => reject(new Error('Excel 파일 처리 시간 초과 (30초)')), 30000)
+        setTimeout(() => reject(new Error(`Excel 파일 처리 시간 초과 (${xlsxTimeout/1000}초)`)), xlsxTimeout)
       )
     ]);
     return result;
@@ -197,10 +204,12 @@ async function readExcelFile(filePath) {
     // ExcelJS fallback (제한적으로)
     try {
       console.log('🔄 ExcelJS로 fallback 시도...');
+      // 플랫폼별 타임아웃: Vercel 10초, Render 20초, 로컬 30초
+      const exceljsTimeout = isVercel ? 10000 : isRender ? 20000 : 30000;
       const result = await Promise.race([
         readExcelFileWithExcelJS(filePath),
         new Promise((_, reject) => 
-          setTimeout(() => reject(new Error('ExcelJS 처리 시간 초과 (20초)')), 20000)
+          setTimeout(() => reject(new Error(`ExcelJS 처리 시간 초과 (${exceljsTimeout/1000}초)`)), exceljsTimeout)
         )
       ]);
       return result;

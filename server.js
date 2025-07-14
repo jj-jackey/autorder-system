@@ -10,43 +10,56 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// render 환경 최적화 설정
+// 플랫폼 감지 및 환경 최적화 설정
 const isProduction = process.env.NODE_ENV === 'production';
+const isVercel = process.env.VERCEL === '1';
+const isRender = process.env.RENDER === 'true';
+
+// 플랫폼별 설정
+const platform = isVercel ? 'vercel' : isRender ? 'render' : 'local';
+console.log(`🚀 플랫폼 감지: ${platform.toUpperCase()} 환경`);
 
 if (isProduction) {
-  console.log('🚀 Production 환경 감지 - render 최적화 설정 적용');
+  console.log(`🚀 Production 환경 - ${platform} 최적화 설정 적용`);
   
-  // 요청 타임아웃 설정 (60초)
+  // 플랫폼별 요청 타임아웃 설정
+  const timeout = isVercel ? 30000 : 60000; // Vercel: 30초, Render: 60초
   app.use((req, res, next) => {
-    req.setTimeout(60000, () => {
+    req.setTimeout(timeout, () => {
       res.status(408).json({ 
-        error: '요청 처리 시간이 초과되었습니다. 파일 크기를 줄이거나 다시 시도해주세요.' 
+        error: `요청 처리 시간이 초과되었습니다. (${timeout/1000}초) 파일 크기를 줄이거나 다시 시도해주세요.`,
+        platform: platform
       });
     });
     next();
   });
   
-  // 메모리 사용량 모니터링
-  setInterval(() => {
-    const memUsage = process.memoryUsage();
-    const memUsageMB = {
-      rss: Math.round(memUsage.rss / 1024 / 1024),
-      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
-      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
-      external: Math.round(memUsage.external / 1024 / 1024)
-    };
-    
-    // 메모리 사용량이 높을 때 경고
-    if (memUsageMB.heapUsed > 400) { // 400MB 초과 시
-      console.warn('⚠️ 높은 메모리 사용량 감지:', memUsageMB);
+  // 메모리 사용량 모니터링 (Render에서만)
+  if (!isVercel) {
+    setInterval(() => {
+      const memUsage = process.memoryUsage();
+      const memUsageMB = {
+        rss: Math.round(memUsage.rss / 1024 / 1024),
+        heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+        heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+        external: Math.round(memUsage.external / 1024 / 1024)
+      };
       
-      // 강제 가비지 컬렉션 (가능한 경우)
-      if (global.gc) {
-        global.gc();
-        console.log('🗑️ 가비지 컬렉션 실행됨');
+      // 메모리 사용량이 높을 때 경고
+      const memoryLimit = isRender ? 400 : 300; // Render: 400MB, 기타: 300MB
+      if (memUsageMB.heapUsed > memoryLimit) {
+        console.warn('⚠️ 높은 메모리 사용량 감지:', memUsageMB);
+        
+        // 강제 가비지 컬렉션 (가능한 경우)
+        if (global.gc) {
+          global.gc();
+          console.log('🗑️ 가비지 컬렉션 실행됨');
+        }
       }
-    }
-  }, 30000); // 30초마다 체크
+    }, 30000); // 30초마다 체크
+  } else {
+    console.log('⚡ Vercel Serverless 환경 - 메모리 모니터링 생략');
+  }
 }
 
 // 한글 파일명 디코딩 함수

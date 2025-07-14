@@ -12,7 +12,10 @@
     "restore": "node scripts/restore.js",
     "minify": "node scripts/minify.js",
     "build": "npm run obfuscate && npm run minify",
-    "build:prod": "npm run obfuscate:prod"
+    "build:prod": "npm run obfuscate:prod",
+    "vercel-build": "echo 'Vercel build complete'",
+    "deploy:vercel": "vercel --prod",
+    "deploy:render": "git push origin main"
   },
   "keywords": [
     "order",
