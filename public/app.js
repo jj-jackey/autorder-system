@@ -7,6 +7,11 @@ let displayFileName = null; // 사용자 친화적 파일명 저장
 let orderFileHeaders = [];
 let supplierFileHeaders = [];
 
+// 진행 중인 요청 관리
+let currentUploadController = null;
+let currentProcessingController = null;
+let isProcessing = false;
+
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', async function() {
     // 🔐 인증 상태 확인 (API 키 없이도 사용 가능)
@@ -41,19 +46,46 @@ function initializeApp() {
     const fileInputOrder = document.getElementById('fileInputOrder');
     const fileInputSupplier = document.getElementById('fileInputSupplier');
     
+    // 기존 이벤트 리스너 제거
+    if (uploadAreaOrder) {
+        uploadAreaOrder.removeEventListener('click', () => fileInputOrder.click());
+        uploadAreaOrder.removeEventListener('dragover', handleDragOver);
+        uploadAreaOrder.removeEventListener('dragleave', handleDragLeave);
+        uploadAreaOrder.removeEventListener('drop', (e) => handleDrop(e, 'order'));
+    }
+    
+    if (fileInputOrder) {
+        fileInputOrder.removeEventListener('change', (e) => handleFileSelect(e, 'order'));
+    }
+    
+    if (uploadAreaSupplier) {
+        uploadAreaSupplier.removeEventListener('click', () => fileInputSupplier.click());
+        uploadAreaSupplier.removeEventListener('dragover', handleDragOver);
+        uploadAreaSupplier.removeEventListener('dragleave', handleDragLeave);
+        uploadAreaSupplier.removeEventListener('drop', (e) => handleDrop(e, 'supplier'));
+    }
+    
+    if (fileInputSupplier) {
+        fileInputSupplier.removeEventListener('change', (e) => handleFileSelect(e, 'supplier'));
+    }
+    
     // 주문서 파일 업로드 이벤트
-    uploadAreaOrder.addEventListener('click', () => fileInputOrder.click());
-    uploadAreaOrder.addEventListener('dragover', handleDragOver);
-    uploadAreaOrder.addEventListener('dragleave', handleDragLeave);
-    uploadAreaOrder.addEventListener('drop', (e) => handleDrop(e, 'order'));
-    fileInputOrder.addEventListener('change', (e) => handleFileSelect(e, 'order'));
+    if (uploadAreaOrder && fileInputOrder) {
+        uploadAreaOrder.addEventListener('click', () => fileInputOrder.click());
+        uploadAreaOrder.addEventListener('dragover', handleDragOver);
+        uploadAreaOrder.addEventListener('dragleave', handleDragLeave);
+        uploadAreaOrder.addEventListener('drop', (e) => handleDrop(e, 'order'));
+        fileInputOrder.addEventListener('change', (e) => handleFileSelect(e, 'order'));
+    }
     
     // 발주서 파일 업로드 이벤트
-    uploadAreaSupplier.addEventListener('click', () => fileInputSupplier.click());
-    uploadAreaSupplier.addEventListener('dragover', handleDragOver);
-    uploadAreaSupplier.addEventListener('dragleave', handleDragLeave);
-    uploadAreaSupplier.addEventListener('drop', (e) => handleDrop(e, 'supplier'));
-    fileInputSupplier.addEventListener('change', (e) => handleFileSelect(e, 'supplier'));
+    if (uploadAreaSupplier && fileInputSupplier) {
+        uploadAreaSupplier.addEventListener('click', () => fileInputSupplier.click());
+        uploadAreaSupplier.addEventListener('dragover', handleDragOver);
+        uploadAreaSupplier.addEventListener('dragleave', handleDragLeave);
+        uploadAreaSupplier.addEventListener('drop', (e) => handleDrop(e, 'supplier'));
+        fileInputSupplier.addEventListener('change', (e) => handleFileSelect(e, 'supplier'));
+    }
     
     // 전송 옵션 변경 이벤트
     document.querySelectorAll('input[name="sendOption"]').forEach(radio => {
@@ -143,6 +175,23 @@ async function processFile(file, type) {
     }
     
     try {
+        // 이미 처리 중인 경우 중단
+        if (isProcessing) {
+            showAlert('warning', '이미 파일 처리가 진행 중입니다. 잠시 후 다시 시도해주세요.');
+            return;
+        }
+        
+        // 처리 상태 설정
+        isProcessing = true;
+        
+        // 이전 요청 취소 (있는 경우)
+        if (currentUploadController) {
+            currentUploadController.abort();
+        }
+        
+        // 새 AbortController 생성
+        currentUploadController = new AbortController();
+        
         // 진행율 표시 시작
         showProgress(`${type === 'order' ? '주문서' : '발주서'} 파일을 업로드하고 있습니다...`);
         
@@ -164,11 +213,23 @@ async function processFile(file, type) {
         
         const uploadPromise = fetch('/api/orders/upload', {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: currentUploadController.signal
         });
+        
+        // 30초 타임아웃 설정
+        const timeoutId = setTimeout(() => {
+            if (currentUploadController) {
+                currentUploadController.abort();
+                showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
+            }
+        }, 30000);
         
         // 진행률과 실제 업로드 모두 완료될 때까지 대기
         const [_, response] = await Promise.all([progressPromise, uploadPromise]);
+        
+        // 타임아웃 정리
+        clearTimeout(timeoutId);
         
         const result = await response.json();
         
@@ -252,9 +313,30 @@ async function processFile(file, type) {
             showUploadResult(null, type, true, errorMessage);
         }
         
+        // 처리 완료 후 상태 초기화
+        isProcessing = false;
+        currentUploadController = null;
+        
     } catch (error) {
         hideProgress();
         console.error('업로드 오류:', error);
+        
+        // 타임아웃 정리 (존재하는 경우)
+        if (typeof timeoutId !== 'undefined') {
+            clearTimeout(timeoutId);
+        }
+        
+        // 처리 상태 초기화
+        isProcessing = false;
+        currentUploadController = null;
+        
+        // 요청 취소 오류인 경우 특별 처리
+        if (error.name === 'AbortError') {
+            console.log('업로드 요청이 취소되었습니다.');
+            showAlert('info', '업로드가 취소되었습니다.');
+            return;
+        }
+        
         // catch 블록의 오류도 해당 업로드 영역에 표시
         showUploadResult(null, type, true, '파일 업로드 중 오류가 발생했습니다.');
     }
@@ -291,8 +373,8 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
                 ❌ ${fileTypeText} 파일 업로드 실패<br>
                 <strong>오류:</strong> ${errorMessage}
                 <div style="margin-top: 10px;">
-                    <button class="btn btn-primary" onclick="restartProcess()" style="padding: 8px 16px; font-size: 0.9em;">
-                        🔄 다시 시작
+                    <button class="btn btn-primary" onclick="restartFileUpload('${type}')" style="padding: 8px 16px; font-size: 0.9em;">
+                        🔄 ${fileTypeText} 다시 업로드
                     </button>
                 </div>
             </div>
@@ -498,14 +580,16 @@ function showUploadWarning(type, message) {
     const uploadResult = document.getElementById(uploadResultId);
     const uploadAlert = document.getElementById(uploadAlertId);
     
+    const fileTypeText = type === 'order' ? '주문서' : '발주서';
+    
     if (uploadResult && uploadAlert) {
         uploadResult.classList.remove('hidden');
         uploadAlert.innerHTML = `
             <div class="alert alert-warning">
                 ${message}
                 <div style="margin-top: 10px;">
-                    <button class="btn btn-primary" onclick="restartProcess()" style="padding: 8px 16px; font-size: 0.9em;">
-                        🔄 다시 시작
+                    <button class="btn btn-primary" onclick="restartFileUpload('${type}')" style="padding: 8px 16px; font-size: 0.9em;">
+                        🔄 ${fileTypeText} 다시 업로드
                     </button>
                 </div>
             </div>
@@ -2854,9 +2938,114 @@ async function logout() {
     }
 }
 
+// 🔄 특정 파일 다시 업로드 함수
+function restartFileUpload(type) {
+    const fileTypeText = type === 'order' ? '주문서' : '발주서';
+    
+    if (confirm(`${fileTypeText} 파일을 다시 업로드하시겠습니까?`)) {
+        // 진행 중인 요청 취소
+        if (currentUploadController) {
+            currentUploadController.abort();
+            currentUploadController = null;
+        }
+        
+        // 처리 상태 초기화
+        isProcessing = false;
+        
+        // 진행률 표시 및 로딩 상태 강제 해제
+        hideProgress();
+        hideLoading();
+        
+        // 해당 파일 타입의 전역 변수만 초기화
+        if (type === 'order') {
+            currentOrderFileId = null;
+            orderFileHeaders = [];
+        } else if (type === 'supplier') {
+            currentSupplierFileId = null;
+            supplierFileHeaders = [];
+        }
+        
+        // 해당 파일 타입의 UI 요소 초기화
+        const uploadResultId = type === 'order' ? 'uploadResultOrder' : 'uploadResultSupplier';
+        const uploadAlertId = type === 'order' ? 'uploadAlertOrder' : 'uploadAlertSupplier';
+        const fileInputId = type === 'order' ? 'fileInputOrder' : 'fileInputSupplier';
+        
+        // 업로드 결과 숨기기
+        const uploadResult = document.getElementById(uploadResultId);
+        if (uploadResult) {
+            uploadResult.classList.add('hidden');
+        }
+        
+        // 알림 영역 초기화
+        const uploadAlert = document.getElementById(uploadAlertId);
+        if (uploadAlert) {
+            uploadAlert.innerHTML = '';
+        }
+        
+        // 파일 입력 초기화
+        const fileInput = document.getElementById(fileInputId);
+        if (fileInput) {
+            fileInput.value = '';
+        }
+        
+        // 매핑이 설정되어 있었다면 초기화 (다른 파일이 있는 경우만)
+        if (type === 'order' && currentSupplierFileId) {
+            // 주문서를 다시 업로드하는 경우, 발주서가 있으면 매핑 재설정 필요
+            currentMapping = {};
+            resetMappingState();
+            showAlert('info', `${fileTypeText} 파일이 초기화되었습니다. 다시 업로드해주세요.`);
+        } else if (type === 'supplier' && currentOrderFileId) {
+            // 발주서를 다시 업로드하는 경우, 주문서가 있으면 매핑 재설정 필요
+            currentMapping = {};
+            resetMappingState();
+            showAlert('info', `${fileTypeText} 파일이 초기화되었습니다. 다시 업로드해주세요.`);
+        } else {
+            showAlert('info', `${fileTypeText} 파일이 초기화되었습니다. 다시 업로드해주세요.`);
+        }
+        
+        // STEP 1으로 돌아가기 (두 파일이 모두 없어진 경우)
+        if (!currentOrderFileId && !currentSupplierFileId) {
+            showStep(1);
+        } else if (currentOrderFileId && currentSupplierFileId) {
+            // 두 파일이 모두 있는 경우 매핑 재설정
+            try {
+                showStep(2);
+                setupMapping();
+            } catch (error) {
+                console.error('매핑 재설정 오류:', error);
+            }
+        }
+        
+        console.log(`🔄 ${fileTypeText} 파일 재시작 완료`);
+    }
+}
+
 // 🔄 전체 프로세스 재시작 함수
 function restartProcess() {
-    if (confirm('모든 진행사항이 초기화됩니다. 처음부터 다시 시작하시겠습니까?')) {
+    // 진행 중인 작업이 있는지 확인
+    const confirmMessage = isProcessing ? 
+        '현재 파일 처리가 진행 중입니다. 작업을 취소하고 처음부터 다시 시작하시겠습니까?' :
+        '모든 진행사항이 초기화됩니다. 처음부터 다시 시작하시겠습니까?';
+    
+    if (confirm(confirmMessage)) {
+        // 진행 중인 요청 취소
+        if (currentUploadController) {
+            currentUploadController.abort();
+            currentUploadController = null;
+        }
+        
+        if (currentProcessingController) {
+            currentProcessingController.abort();
+            currentProcessingController = null;
+        }
+        
+        // 처리 상태 초기화
+        isProcessing = false;
+        
+        // 진행률 표시 및 로딩 상태 강제 해제
+        hideProgress();
+        hideLoading();
+        
         // 모든 전역 변수 초기화
         currentOrderFileId = null;
         currentSupplierFileId = null;
@@ -3018,6 +3207,11 @@ function restartProcess() {
         
         // 버튼 상태 초기화
         updateGenerateOrderButton();
+        
+        // 이벤트 리스너 재설정
+        setTimeout(() => {
+            initializeApp();
+        }, 100);
         
         showAlert('info', '🔄 모든 데이터가 초기화되었습니다. 처음부터 시작하세요.');
         
@@ -3467,6 +3661,23 @@ async function processFileForMode(file, type) {
     }
     
     try {
+        // 이미 처리 중인 경우 중단
+        if (isProcessing) {
+            showAlert('warning', '이미 파일 처리가 진행 중입니다. 잠시 후 다시 시도해주세요.');
+            return;
+        }
+        
+        // 처리 상태 설정
+        isProcessing = true;
+        
+        // 이전 요청 취소 (있는 경우)
+        if (currentUploadController) {
+            currentUploadController.abort();
+        }
+        
+        // 새 AbortController 생성
+        currentUploadController = new AbortController();
+        
         const fileTypeText = type.includes('supplier') ? '발주서' : '주문서';
         showProgress(`${fileTypeText} 파일을 업로드하고 있습니다...`);
         
@@ -3476,10 +3687,23 @@ async function processFileForMode(file, type) {
         
         const response = await fetch('/api/orders/upload', {
             method: 'POST',
-            body: formData
+            body: formData,
+            signal: currentUploadController.signal
         });
         
+        // 30초 타임아웃 설정
+        const timeoutId = setTimeout(() => {
+            if (currentUploadController) {
+                currentUploadController.abort();
+                showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
+            }
+        }, 30000);
+        
         const result = await response.json();
+        
+        // 타임아웃 정리
+        clearTimeout(timeoutId);
+        
         hideProgress();
         
         if (result.success) {
@@ -3549,9 +3773,30 @@ async function processFileForMode(file, type) {
             showUploadResult(null, baseType, true, errorMessage);
         }
         
+        // 처리 완료 후 상태 초기화
+        isProcessing = false;
+        currentUploadController = null;
+        
     } catch (error) {
         hideProgress();
         console.error('업로드 오류:', error);
+        
+        // 타임아웃 정리 (존재하는 경우)
+        if (typeof timeoutId !== 'undefined') {
+            clearTimeout(timeoutId);
+        }
+        
+        // 처리 상태 초기화
+        isProcessing = false;
+        currentUploadController = null;
+        
+        // 요청 취소 오류인 경우 특별 처리
+        if (error.name === 'AbortError') {
+            console.log('업로드 요청이 취소되었습니다.');
+            showAlert('info', '업로드가 취소되었습니다.');
+            return;
+        }
+        
         // catch 블록의 오류도 해당 업로드 영역에 표시
         const baseType = type.replace('-direct', '').replace('-mode', '');
         showUploadResult(null, baseType, true, '파일 업로드 중 오류가 발생했습니다.');
