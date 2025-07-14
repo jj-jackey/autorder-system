@@ -131,6 +131,11 @@ async function processFile(file, type) {
         return;
     }
     
+    // .xls 파일에 대한 경고 표시 (해당 업로드 영역에)
+    if (file.name.toLowerCase().endsWith('.xls')) {
+        showUploadWarning(type, '⚠️ 구형 Excel 파일(.xls)은 지원이 제한적입니다. 업로드를 시도하지만, 오류가 발생할 경우 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요.');
+    }
+    
     // 파일 크기 검증 (10MB)
     if (file.size > 10 * 1024 * 1024) {
         showAlert('error', '파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요.');
@@ -187,24 +192,76 @@ async function processFile(file, type) {
             
             showUploadResult(result, type);
             
+            // 발주서가 업로드되었을 때 다음 단계로 이동하는 조건 개선
+            if (type === 'supplier') {
+                // 발주서만 업로드된 경우 - 직접 입력 모드로 안내
+                if (!currentOrderFileId) {
+                    showAlert('info', '📝 발주서가 업로드되었습니다. 주문서를 업로드하거나 하단의 "직접 입력" 섹션을 이용해 주문 정보를 입력하세요.');
+                    
+                    // 직접 입력 섹션 강조
+                    const directInputSection = document.getElementById('directInputStep');
+                    if (directInputSection) {
+                        directInputSection.style.animation = 'pulse 2s infinite';
+                        directInputSection.style.border = '2px solid #007bff';
+                        directInputSection.style.backgroundColor = '#f8f9fa';
+                        
+                        // 5초 후 강조 제거
+                        setTimeout(() => {
+                            directInputSection.style.animation = '';
+                            directInputSection.style.border = '';
+                            directInputSection.style.backgroundColor = '';
+                        }, 5000);
+                    }
+                }
+            }
+            
             // 두 파일이 모두 업로드되었을 때만 STEP 2로 이동
+            console.log('🔍 파일 업로드 상태 확인:', {
+                currentOrderFileId: currentOrderFileId,
+                currentSupplierFileId: currentSupplierFileId,
+                type: type
+            });
+            
             if (currentOrderFileId && currentSupplierFileId) {
-                showStep(2);
-                setupMapping();
+                console.log('✅ 두 파일이 모두 업로드됨 - STEP 2로 이동');
+                console.log('📊 파일 헤더 정보:', {
+                    orderFileHeaders: orderFileHeaders,
+                    supplierFileHeaders: supplierFileHeaders
+                });
+                
+                try {
+                    showStep(2);
+                    setupMapping();
+                    console.log('✅ STEP 2 표시 및 매핑 설정 완료');
+                } catch (error) {
+                    console.error('❌ STEP 2 표시 또는 매핑 설정 오류:', error);
+                    showAlert('error', 'STEP 2 표시 중 오류가 발생했습니다. 페이지를 새로고침해주세요.');
+                }
+            } else {
+                console.log('⚠️ 아직 두 파일이 모두 업로드되지 않음');
             }
         } else {
-            showAlert('error', result.error || '파일 업로드에 실패했습니다.');
+            let errorMessage = result.error || '파일 업로드에 실패했습니다.';
+            
+            // .xls 파일 오류인 경우 특별 안내
+            if (file.name.toLowerCase().endsWith('.xls') && errorMessage.includes('Excel 파일')) {
+                errorMessage = `${errorMessage}\n\n💡 해결 방법:\n1. Excel에서 파일을 열고 "파일 > 다른 이름으로 저장" 선택\n2. 파일 형식을 "Excel 통합 문서 (*.xlsx)" 선택\n3. 새로 저장된 .xlsx 파일을 업로드해주세요`;
+            }
+            
+            // 해당 업로드 영역에 오류 메시지 표시
+            showUploadResult(null, type, true, errorMessage);
         }
         
     } catch (error) {
         hideProgress();
         console.error('업로드 오류:', error);
-        showAlert('error', '파일 업로드 중 오류가 발생했습니다.');
+        // catch 블록의 오류도 해당 업로드 영역에 표시
+        showUploadResult(null, type, true, '파일 업로드 중 오류가 발생했습니다.');
     }
 }
 
-// 업로드 결과 표시
-function showUploadResult(result, type) {
+// 업로드 결과 표시 (성공 및 실패 케이스 모두 처리)
+function showUploadResult(result, type, isError = false, errorMessage = '') {
     const uploadResultId = type === 'order' ? 'uploadResultOrder' : 'uploadResultSupplier';
     const uploadAlertId = type === 'order' ? 'uploadAlertOrder' : 'uploadAlertSupplier';
     
@@ -214,16 +271,31 @@ function showUploadResult(result, type) {
     // 요소가 존재하지 않으면 기본 알림으로 대체
     if (!uploadResult || !uploadAlert) {
         const fileTypeText = type === 'order' ? '주문서' : '발주서';
-        showAlert('success', `✅ ${fileTypeText} 파일이 성공적으로 업로드되었습니다! (${result.headers.length}개 필드)`);
+        if (isError) {
+            showAlert('error', `❌ ${fileTypeText} 파일 업로드 실패: ${errorMessage}`);
+        } else {
+            showAlert('success', `✅ ${fileTypeText} 파일이 성공적으로 업로드되었습니다! (${result.headers.length}개 필드)`);
+        }
         return;
     }
     
     uploadResult.classList.remove('hidden');
     uploadResult.classList.add('upload-result');
     
-    // 검증 결과에 따른 알림 표시
     const fileTypeText = type === 'order' ? '주문서' : '발주서';
     
+    // 오류 케이스 처리
+    if (isError) {
+        uploadAlert.innerHTML = `
+            <div class="alert alert-error">
+                ❌ ${fileTypeText} 파일 업로드 실패<br>
+                <strong>오류:</strong> ${errorMessage}
+            </div>
+        `;
+        return;
+    }
+    
+    // 성공 케이스 처리
     // 빈 템플릿 경고 확인
     const emptyTemplateWarning = result.validation.warnings.find(w => w.type === 'empty_template');
     
@@ -300,39 +372,63 @@ function showUploadResult(result, type) {
                 orderResult.classList.remove('hidden');
             }
         }
+        
+        // 발주서 업로드 완료 시 추가 안내 메시지
+        if (type === 'supplier') {
+            const supplierAlert = document.getElementById('uploadAlertSupplier');
+            if (supplierAlert && !supplierAlert.innerHTML.includes('다음 단계를 진행하려면')) {
+                supplierAlert.innerHTML += `
+                    <div class="alert alert-warning" style="margin-top: 10px;">
+                        ⚠️ 다음 단계를 진행하려면 주문서를 업로드하거나 "직접 입력하기"를 이용해주세요.
+                    </div>
+                `;
+            }
+        }
     }
 }
 
 // 매핑 설정
 function setupMapping() {
-
+    console.log('🔧 setupMapping 함수 시작');
     
-    // 소스 필드 초기화 - 주문서 필드만
-    const sourceFieldsContainer = document.getElementById('sourceFields');
-    sourceFieldsContainer.innerHTML = '';
-    
-    // 주문서 필드 추가
-    if (orderFileHeaders.length > 0) {
-        orderFileHeaders.forEach(header => {
-            const fieldDiv = document.createElement('div');
-            fieldDiv.className = 'field-item';
-            fieldDiv.textContent = header;
-            fieldDiv.dataset.source = header;
-            fieldDiv.dataset.fileType = 'order';
-            fieldDiv.onclick = () => selectSourceField(fieldDiv);
-            sourceFieldsContainer.appendChild(fieldDiv);
-        });
-    }
-    
-    // 타겟 필드 초기화 - 발주서 필드 또는 기본 템플릿
-    const targetFieldsContainer = document.getElementById('targetFields');
-    targetFieldsContainer.innerHTML = '';
-    
-    // 발주서 필드 추가 또는 기본 템플릿 사용
-    if (supplierFileHeaders.length > 0) {
-        // 발주서 파일이 업로드된 경우
-        supplierFileHeaders.forEach(header => {
-            const fieldDiv = document.createElement('div');
+    try {
+        // 소스 필드 초기화 - 주문서 필드만
+        const sourceFieldsContainer = document.getElementById('sourceFields');
+        if (!sourceFieldsContainer) {
+            throw new Error('sourceFields 요소를 찾을 수 없습니다.');
+        }
+        sourceFieldsContainer.innerHTML = '';
+        
+        // 주문서 필드 추가
+        console.log('📋 주문서 헤더 처리:', orderFileHeaders);
+        if (orderFileHeaders.length > 0) {
+            orderFileHeaders.forEach(header => {
+                const fieldDiv = document.createElement('div');
+                fieldDiv.className = 'field-item';
+                fieldDiv.textContent = header;
+                fieldDiv.dataset.source = header;
+                fieldDiv.dataset.fileType = 'order';
+                fieldDiv.onclick = () => selectSourceField(fieldDiv);
+                sourceFieldsContainer.appendChild(fieldDiv);
+            });
+            console.log('✅ 주문서 필드 추가 완료:', orderFileHeaders.length, '개');
+        } else {
+            console.warn('⚠️ 주문서 헤더가 비어있습니다.');
+        }
+        
+        // 타겟 필드 초기화 - 발주서 필드 또는 기본 템플릿
+        const targetFieldsContainer = document.getElementById('targetFields');
+        if (!targetFieldsContainer) {
+            throw new Error('targetFields 요소를 찾을 수 없습니다.');
+        }
+        targetFieldsContainer.innerHTML = '';
+        
+        // 발주서 필드 추가 또는 기본 템플릿 사용
+        console.log('📋 발주서 헤더 처리:', supplierFileHeaders);
+        if (supplierFileHeaders.length > 0) {
+            // 발주서 파일이 업로드된 경우
+            supplierFileHeaders.forEach(header => {
+                const fieldDiv = document.createElement('div');
             fieldDiv.className = 'field-item';
             fieldDiv.textContent = header;
             fieldDiv.dataset.target = header;
@@ -376,11 +472,38 @@ function setupMapping() {
         item.onclick = () => selectTargetField(item);
     });
     
-    // 매핑 상태 초기화
-    sessionStorage.setItem('mappingSaved', 'false');
+        // 매핑 상태 초기화
+        sessionStorage.setItem('mappingSaved', 'false');
+        
+        // GENERATE ORDER 버튼 초기 비활성화
+        updateGenerateOrderButton();
+        
+            console.log('✅ setupMapping 함수 완료');
+    } catch (error) {
+        console.error('❌ setupMapping 함수 오류:', error);
+        showAlert('error', '매핑 설정 중 오류가 발생했습니다: ' + error.message);
+    }
+}
+
+// 업로드 영역에 경고 메시지 표시
+function showUploadWarning(type, message) {
+    const uploadResultId = type === 'order' ? 'uploadResultOrder' : 'uploadResultSupplier';
+    const uploadAlertId = type === 'order' ? 'uploadAlertOrder' : 'uploadAlertSupplier';
     
-    // GENERATE ORDER 버튼 초기 비활성화
-    updateGenerateOrderButton();
+    const uploadResult = document.getElementById(uploadResultId);
+    const uploadAlert = document.getElementById(uploadAlertId);
+    
+    if (uploadResult && uploadAlert) {
+        uploadResult.classList.remove('hidden');
+        uploadAlert.innerHTML = `
+            <div class="alert alert-warning">
+                ${message}
+            </div>
+        `;
+    } else {
+        // 요소가 없으면 전역 알림으로 대체
+        showAlert('warning', message);
+    }
 }
 
 // 업로드 상태에 따른 버튼 가시성 제어
@@ -3327,6 +3450,12 @@ async function processFileForMode(file, type) {
         return;
     }
     
+    // .xls 파일에 대한 경고 표시 (해당 업로드 영역에)
+    if (file.name.toLowerCase().endsWith('.xls')) {
+        const baseType = type.replace('-direct', '').replace('-mode', '');
+        showUploadWarning(baseType, '⚠️ 구형 Excel 파일(.xls)은 지원이 제한적입니다. 업로드를 시도하지만, 오류가 발생할 경우 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요.');
+    }
+    
     try {
         const fileTypeText = type.includes('supplier') ? '발주서' : '주문서';
         showProgress(`${fileTypeText} 파일을 업로드하고 있습니다...`);
@@ -3398,13 +3527,24 @@ async function processFileForMode(file, type) {
             }
             
         } else {
-            showAlert('error', result.error || '파일 업로드에 실패했습니다.');
+            let errorMessage = result.error || '파일 업로드에 실패했습니다.';
+            
+            // .xls 파일 오류인 경우 특별 안내
+            if (file.name.toLowerCase().endsWith('.xls') && errorMessage.includes('Excel 파일')) {
+                errorMessage = `${errorMessage}\n\n💡 해결 방법:\n1. Excel에서 파일을 열고 "파일 > 다른 이름으로 저장" 선택\n2. 파일 형식을 "Excel 통합 문서 (*.xlsx)" 선택\n3. 새로 저장된 .xlsx 파일을 업로드해주세요`;
+            }
+            
+            // 해당 업로드 영역에 오류 메시지 표시
+            const baseType = type.replace('-direct', '').replace('-mode', '');
+            showUploadResult(null, baseType, true, errorMessage);
         }
         
     } catch (error) {
         hideProgress();
         console.error('업로드 오류:', error);
-        showAlert('error', '파일 업로드 중 오류가 발생했습니다.');
+        // catch 블록의 오류도 해당 업로드 영역에 표시
+        const baseType = type.replace('-direct', '').replace('-mode', '');
+        showUploadResult(null, baseType, true, '파일 업로드 중 오류가 발생했습니다.');
     }
 }
 

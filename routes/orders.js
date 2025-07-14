@@ -359,7 +359,13 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
           }
         } catch (fallbackError) {
           console.error('❌ 기본 Excel 처리도 실패:', fallbackError.message);
-          throw new Error(`Excel 파일 처리 실패: ${fallbackError.message}`);
+          
+          // .xls 파일인 경우 특별 안내 메시지
+          if (originalFileName.toLowerCase().endsWith('.xls')) {
+            throw new Error(`구형 Excel 파일(.xls)은 지원이 제한적입니다. 다음 방법을 시도해보세요:\n\n1. Excel에서 파일을 열고 "다른 이름으로 저장" → "Excel 통합 문서(.xlsx)" 선택\n2. 또는 Google Sheets에서 열고 .xlsx 형식으로 다운로드\n\n문제가 계속되면 CSV 형식으로 저장해보세요.`);
+          } else {
+            throw new Error(`Excel 파일 처리 실패: ${fallbackError.message}`);
+          }
         }
       }
     }

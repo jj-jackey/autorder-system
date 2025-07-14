@@ -160,14 +160,67 @@ async function readExcelFile(filePath) {
 async function readExcelFileWithXLSX(filePath) {
   const XLSX = require('xlsx');
   
-  // 안전한 옵션으로 파일 읽기 (날짜/시간 형식 보존)
-  const workbook = XLSX.readFile(filePath, {
-    cellText: false,
-    cellDates: true,
-    raw: false,
-    type: 'binary',
-    dateNF: 'yyyy-mm-dd hh:mm:ss'  // 날짜/시간 형식 지정
-  });
+  // 파일 확장자 확인
+  const fileExtension = path.extname(filePath).toLowerCase();
+  
+  let workbook;
+  
+  if (fileExtension === '.xls') {
+    // .xls 파일을 위한 특별 처리
+    console.log('📋 .xls 파일 처리를 위한 특별 옵션 적용');
+    
+    try {
+      // Buffer로 파일 읽기
+      const fileBuffer = fs.readFileSync(filePath);
+      
+      // .xls 파일을 위한 옵션 설정
+      workbook = XLSX.read(fileBuffer, {
+        type: 'buffer',
+        cellText: false,
+        cellDates: true,
+        raw: false,
+        codepage: 65001, // UTF-8 인코딩
+        dateNF: 'yyyy-mm-dd hh:mm:ss'
+      });
+      
+      console.log('✅ .xls 파일 읽기 성공');
+      
+    } catch (xlsError) {
+      console.error('❌ .xls 파일 읽기 실패:', xlsError.message);
+      
+      // 다른 옵션으로 재시도
+      try {
+        console.log('🔄 .xls 파일 다른 옵션으로 재시도...');
+        const fileBuffer = fs.readFileSync(filePath);
+        
+        workbook = XLSX.read(fileBuffer, {
+          type: 'buffer',
+          cellText: true,
+          cellDates: false,
+          raw: true,
+          codepage: 949 // EUC-KR 인코딩 시도
+        });
+        
+        console.log('✅ .xls 파일 EUC-KR 인코딩으로 읽기 성공');
+        
+      } catch (xlsRetryError) {
+        console.error('❌ .xls 파일 재시도도 실패:', xlsRetryError.message);
+        throw new Error(`파일 형식이 손상되었거나 지원되지 않는 .xls 파일입니다. 파일을 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요. (오류: ${xlsRetryError.message})`);
+      }
+    }
+    
+  } else {
+    // .xlsx 파일을 위한 일반적인 처리
+    console.log('📋 .xlsx 파일 처리');
+    
+    workbook = XLSX.readFile(filePath, {
+      cellText: false,
+      cellDates: true,
+      raw: false,
+      type: 'file',
+      dateNF: 'yyyy-mm-dd hh:mm:ss'
+    });
+  }
   
   console.log('📊 xlsx - 총 워크시트 개수:', workbook.SheetNames.length);
   
