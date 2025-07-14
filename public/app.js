@@ -187,7 +187,7 @@ async function checkIfBinaryXLS(file) {
                 }
             }
             
-            // OLE2 구조는 Excel 2016에서도 사용하므로 허용
+            // OLE2 구조 감지
             if (bytes.length >= 8) {
                 const isOLE2 = bytes[0] === 0xD0 && bytes[1] === 0xCF && 
                               bytes[2] === 0x11 && bytes[3] === 0xE0 &&
@@ -195,8 +195,16 @@ async function checkIfBinaryXLS(file) {
                               bytes[6] === 0x1A && bytes[7] === 0xE1;
                 
                 if (isOLE2) {
-                    console.log('✅ OLE2 구조 감지 (Excel 2016 호환):', file.name);
-                    resolve(false); // OLE2 구조이지만 현대 Excel 호환 (허용)
+                    console.log('🔍 OLE2 구조 감지:', file.name);
+                    
+                    // .xls 확장자인 경우 경고 표시 (하지만 차단하지는 않음)
+                    if (file.name.toLowerCase().endsWith('.xls')) {
+                        console.log('⚠️ .xls 파일 감지 - 호환성 경고 필요');
+                        // 경고는 하되 업로드는 허용 (사용자 선택권 제공)
+                    }
+                    
+                    console.log('✅ OLE2 구조 감지 - 처리 허용');
+                    resolve(false); // 허용하되 서버에서 적절히 처리
                     return;
                 }
             }
@@ -283,10 +291,24 @@ async function processFile(file, type) {
         return;
     }
     
+    // .xls 파일에 대한 사전 경고 (차단하지는 않음)
+    if (file.name.toLowerCase().endsWith('.xls')) {
+        showUploadWarning(type, 
+            '⚠️ 구형 Excel 파일(.xls)이 감지되었습니다.<br><br>' +
+            '💡 <strong>권장사항:</strong><br>' +
+            '• 업로드 실패 시 Excel에서 "다른 이름으로 저장" → ".xlsx" 형식으로 변환해보세요<br>' +
+            '• 또는 Google Sheets에서 열고 .xlsx로 다운로드해보세요<br><br>' +
+            '🔄 지금 업로드를 진행합니다...'
+        );
+    }
+    
     try {
         // 이미 처리 중인 경우 중단
         if (isProcessing) {
-            showAlert('warning', '이미 파일 처리가 진행 중입니다. 잠시 후 다시 시도해주세요.');
+            showUploadResult(null, type, true, 
+                '⚠️ 이미 파일 처리가 진행 중입니다.<br><br>' +
+                '💡 현재 다른 파일을 처리하고 있습니다. 잠시 후 다시 시도해주세요.'
+            );
             return;
         }
         
@@ -750,10 +772,8 @@ function showUploadWarning(type, message) {
         uploadAlert.innerHTML = `
             <div class="alert alert-warning">
                 ${message}
-                <div style="margin-top: 10px;">
-                    <button class="btn btn-primary" onclick="restartFileUpload('${type}')" style="padding: 8px 16px; font-size: 0.9em;">
-                        🔄 ${fileTypeText} 다시 업로드
-                    </button>
+                <div style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #ffc107; border-radius: 4px;">
+                    💡 다른 ${fileTypeText} 파일을 사용하려면 위의 업로드 영역을 이용해주세요.
                 </div>
             </div>
         `;
@@ -3857,7 +3877,11 @@ async function processFileForMode(file, type) {
     try {
         // 이미 처리 중인 경우 중단
         if (isProcessing) {
-            showAlert('warning', '이미 파일 처리가 진행 중입니다. 잠시 후 다시 시도해주세요.');
+            const baseType = type.replace('-direct', '').replace('-mode', '');
+            showUploadResult(null, baseType, true, 
+                '⚠️ 이미 파일 처리가 진행 중입니다.<br><br>' +
+                '💡 현재 다른 파일을 처리하고 있습니다. 잠시 후 다시 시도해주세요.'
+            );
             return;
         }
         
