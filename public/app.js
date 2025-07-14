@@ -290,6 +290,11 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
             <div class="alert alert-error">
                 ❌ ${fileTypeText} 파일 업로드 실패<br>
                 <strong>오류:</strong> ${errorMessage}
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="restartProcess()" style="padding: 8px 16px; font-size: 0.9em;">
+                        🔄 다시 시작
+                    </button>
+                </div>
             </div>
         `;
         return;
@@ -498,6 +503,11 @@ function showUploadWarning(type, message) {
         uploadAlert.innerHTML = `
             <div class="alert alert-warning">
                 ${message}
+                <div style="margin-top: 10px;">
+                    <button class="btn btn-primary" onclick="restartProcess()" style="padding: 8px 16px; font-size: 0.9em;">
+                        🔄 다시 시작
+                    </button>
+                </div>
             </div>
         `;
     } else {
