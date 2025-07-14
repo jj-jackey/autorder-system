@@ -10,6 +10,45 @@ require('dotenv').config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
+// render 환경 최적화 설정
+const isProduction = process.env.NODE_ENV === 'production';
+
+if (isProduction) {
+  console.log('🚀 Production 환경 감지 - render 최적화 설정 적용');
+  
+  // 요청 타임아웃 설정 (60초)
+  app.use((req, res, next) => {
+    req.setTimeout(60000, () => {
+      res.status(408).json({ 
+        error: '요청 처리 시간이 초과되었습니다. 파일 크기를 줄이거나 다시 시도해주세요.' 
+      });
+    });
+    next();
+  });
+  
+  // 메모리 사용량 모니터링
+  setInterval(() => {
+    const memUsage = process.memoryUsage();
+    const memUsageMB = {
+      rss: Math.round(memUsage.rss / 1024 / 1024),
+      heapTotal: Math.round(memUsage.heapTotal / 1024 / 1024),
+      heapUsed: Math.round(memUsage.heapUsed / 1024 / 1024),
+      external: Math.round(memUsage.external / 1024 / 1024)
+    };
+    
+    // 메모리 사용량이 높을 때 경고
+    if (memUsageMB.heapUsed > 400) { // 400MB 초과 시
+      console.warn('⚠️ 높은 메모리 사용량 감지:', memUsageMB);
+      
+      // 강제 가비지 컬렉션 (가능한 경우)
+      if (global.gc) {
+        global.gc();
+        console.log('🗑️ 가비지 컬렉션 실행됨');
+      }
+    }
+  }, 30000); // 30초마다 체크
+}
+
 // 한글 파일명 디코딩 함수
 function decodeFileName(fileName) {
   try {

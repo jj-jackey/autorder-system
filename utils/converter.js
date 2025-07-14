@@ -118,7 +118,7 @@ async function readSourceFile(filePath) {
   }
 }
 
-// 📊 Excel 파일 읽기 (개선된 버전 - xlsx 우선, ExcelJS fallback)
+// 📊 Excel 파일 읽기 (render 환경 최적화 버전)
 async function readExcelFile(filePath) {
   console.log('📊 Excel 파일 읽기 시작:', {
     path: filePath,
@@ -133,26 +133,172 @@ async function readExcelFile(filePath) {
   // 파일 크기 확인
   const stats = fs.statSync(filePath);
   const fileSizeMB = stats.size / 1024 / 1024;
+  const fileExtension = path.extname(filePath).toLowerCase();
+  
   console.log('📊 파일 정보:', {
     size: stats.size,
-    sizeInMB: fileSizeMB.toFixed(2) + 'MB'
+    sizeInMB: fileSizeMB.toFixed(2) + 'MB',
+    extension: fileExtension
   });
   
-  // 1차 시도: xlsx 라이브러리 사용 (더 안전함)
-  try {
-    console.log('🔄 xlsx 라이브러리로 파일 읽기 시도...');
-    return await readExcelFileWithXLSX(filePath);
-  } catch (xlsxError) {
-    console.warn('⚠️ xlsx 라이브러리 실패, ExcelJS로 fallback:', xlsxError.message);
+  // render 환경에서 파일 크기 제한 (20MB)
+  const isProduction = process.env.NODE_ENV === 'production';
+  const maxFileSize = isProduction ? 20 : 50;
+  
+  if (fileSizeMB > maxFileSize) {
+    throw new Error(`파일 크기가 너무 큽니다. ${maxFileSize}MB 이하의 파일을 업로드해주세요. (현재: ${fileSizeMB.toFixed(1)}MB)`);
   }
   
-  // 2차 시도: ExcelJS 사용 (안전한 옵션으로)
+  // 구형 XLS 파일 조기 감지 및 빠른 실패
+  if (fileExtension === '.xls') {
+    console.log('⚠️ 구형 XLS 파일 감지 - 제한적 처리 모드');
+    
+    // production 환경에서는 더 엄격하게 처리
+    if (isProduction) {
+      try {
+        // 단일 시도만 수행 (타임아웃 10초)
+        const result = await Promise.race([
+          readExcelFileWithXLSXOptimized(filePath),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error('XLS 파일 처리 시간 초과 (10초)')), 10000)
+          )
+        ]);
+        return result;
+      } catch (xlsError) {
+        console.error('❌ 구형 XLS 파일 처리 실패:', xlsError.message);
+        throw new Error(`구형 Excel 파일(.xls)은 지원이 제한적입니다. 다음 방법을 시도해보세요:
+
+1. Excel에서 파일을 열고 "다른 이름으로 저장" → "Excel 통합 문서(.xlsx)" 선택
+2. 또는 Google Sheets에서 열고 .xlsx 형식으로 다운로드
+
+문제가 계속되면 CSV 형식으로 저장해보세요.`);
+      }
+    }
+  }
+  
+  // XLSX 파일 또는 개발 환경에서의 XLS 파일 처리
   try {
-    console.log('🔄 ExcelJS로 파일 읽기 시도...');
-    return await readExcelFileWithExcelJS(filePath);
-  } catch (exceljsError) {
-    console.error('❌ ExcelJS도 실패:', exceljsError.message);
-    throw new Error(`Excel 파일을 읽을 수 없습니다: ${exceljsError.message}`);
+    console.log('🔄 Excel 파일 읽기 시도...');
+    const result = await Promise.race([
+      readExcelFileWithXLSX(filePath),
+      new Promise((_, reject) => 
+        setTimeout(() => reject(new Error('Excel 파일 처리 시간 초과 (30초)')), 30000)
+      )
+    ]);
+    return result;
+  } catch (xlsxError) {
+    console.warn('⚠️ xlsx 라이브러리 실패:', xlsxError.message);
+    
+    // production 환경에서는 fallback 제한
+    if (isProduction && fileExtension === '.xls') {
+      throw new Error(`구형 Excel 파일(.xls) 처리에 실패했습니다. 파일을 .xlsx 형식으로 변환 후 다시 시도해주세요.`);
+    }
+    
+    // ExcelJS fallback (제한적으로)
+    try {
+      console.log('🔄 ExcelJS로 fallback 시도...');
+      const result = await Promise.race([
+        readExcelFileWithExcelJS(filePath),
+        new Promise((_, reject) => 
+          setTimeout(() => reject(new Error('ExcelJS 처리 시간 초과 (20초)')), 20000)
+        )
+      ]);
+      return result;
+    } catch (exceljsError) {
+      console.error('❌ ExcelJS도 실패:', exceljsError.message);
+      throw new Error(`Excel 파일을 읽을 수 없습니다: ${exceljsError.message}`);
+    }
+  }
+}
+
+// 구형 XLS 파일을 위한 최적화된 읽기 함수 (render 환경용)
+async function readExcelFileWithXLSXOptimized(filePath) {
+  const XLSX = require('xlsx');
+  
+  console.log('📋 최적화된 XLS 파일 처리 시작');
+  
+  try {
+    // 메모리 효율적인 Buffer 읽기
+    const fileBuffer = fs.readFileSync(filePath);
+    
+    // 단순한 옵션으로 빠른 시도
+    const workbook = XLSX.read(fileBuffer, {
+      type: 'buffer',
+      cellText: true,
+      cellDates: false,
+      raw: true,
+      codepage: 949, // EUC-KR 우선 시도
+      sheetStubs: false, // 빈 셀 무시로 메모리 절약
+      bookVBA: false, // VBA 무시
+      bookFiles: false, // 파일 메타데이터 무시
+      bookProps: false, // 문서 속성 무시
+      bookSheets: false, // 시트 메타데이터 무시
+      bookDeps: false, // 의존성 무시
+      dense: false // 밀집 모드 비활성화
+    });
+    
+    console.log('✅ XLS 파일 읽기 성공 (최적화 모드)');
+    
+    // 첫 번째 시트만 처리 (빠른 처리)
+    const firstSheetName = workbook.SheetNames[0];
+    if (!firstSheetName) {
+      throw new Error('워크시트를 찾을 수 없습니다.');
+    }
+    
+    const worksheet = workbook.Sheets[firstSheetName];
+    const jsonData = XLSX.utils.sheet_to_json(worksheet, { 
+      header: 1, 
+      raw: false, 
+      defval: '',
+      blankrows: false // 빈 행 무시
+    });
+    
+    // 빠른 헤더 찾기 (최대 5행만 확인)
+    let headers = [];
+    let headerRowIndex = 0;
+    
+    for (let i = 0; i < Math.min(5, jsonData.length); i++) {
+      const row = jsonData[i];
+      if (row && row.length > 2) {
+        const nonEmptyCount = row.filter(cell => cell && cell.toString().trim() !== '').length;
+        if (nonEmptyCount >= 3) {
+          headers = row.filter(cell => cell && cell.toString().trim() !== '')
+                      .map(cell => cell.toString().trim());
+          headerRowIndex = i;
+          break;
+        }
+      }
+    }
+    
+    if (headers.length === 0) {
+      throw new Error('헤더를 찾을 수 없습니다.');
+    }
+    
+    // 빠른 데이터 처리 (최대 500행만)
+    const data = [];
+    const maxRows = Math.min(500, jsonData.length);
+    
+    for (let i = headerRowIndex + 1; i < maxRows; i++) {
+      const row = jsonData[i];
+      if (!row || row.length === 0) continue;
+      
+      const rowData = {};
+      headers.forEach((header, index) => {
+        const value = row[index] ? row[index].toString().trim() : '';
+        rowData[header] = value;
+      });
+      
+      if (Object.values(rowData).some(value => value !== '')) {
+        data.push(rowData);
+      }
+    }
+    
+    console.log(`✅ 최적화된 XLS 파일 처리 완료: ${data.length}행`);
+    return { headers, data };
+    
+  } catch (error) {
+    console.error('❌ 최적화된 XLS 처리 실패:', error.message);
+    throw error;
   }
 }
 
@@ -166,49 +312,35 @@ async function readExcelFileWithXLSX(filePath) {
   let workbook;
   
   if (fileExtension === '.xls') {
-    // .xls 파일을 위한 특별 처리
-    console.log('📋 .xls 파일 처리를 위한 특별 옵션 적용');
+    // render 환경에서는 제한적 XLS 처리
+    const isProduction = process.env.NODE_ENV === 'production';
+    
+    if (isProduction) {
+      throw new Error('Production 환경에서는 구형 XLS 파일 처리가 제한됩니다. 파일을 XLSX 형식으로 변환해주세요.');
+    }
+    
+    console.log('📋 .xls 파일 처리 (개발 환경)');
     
     try {
-      // Buffer로 파일 읽기
       const fileBuffer = fs.readFileSync(filePath);
       
-      // .xls 파일을 위한 옵션 설정
+      // 단일 시도만 수행 (EUC-KR 우선)
       workbook = XLSX.read(fileBuffer, {
         type: 'buffer',
-        cellText: false,
-        cellDates: true,
-        raw: false,
-        codepage: 65001, // UTF-8 인코딩
-        dateNF: 'yyyy-mm-dd hh:mm:ss'
+        cellText: true,
+        cellDates: false,
+        raw: true,
+        codepage: 949, // EUC-KR 인코딩
+        sheetStubs: false, // 메모리 절약
+        bookVBA: false
       });
       
-      console.log('✅ .xls 파일 읽기 성공');
+      console.log('✅ .xls 파일 읽기 성공 (단일 시도)');
       
     } catch (xlsError) {
       console.error('❌ .xls 파일 읽기 실패:', xlsError.message);
-      
-      // 다른 옵션으로 재시도
-      try {
-        console.log('🔄 .xls 파일 다른 옵션으로 재시도...');
-        const fileBuffer = fs.readFileSync(filePath);
-        
-        workbook = XLSX.read(fileBuffer, {
-          type: 'buffer',
-          cellText: true,
-          cellDates: false,
-          raw: true,
-          codepage: 949 // EUC-KR 인코딩 시도
-        });
-        
-        console.log('✅ .xls 파일 EUC-KR 인코딩으로 읽기 성공');
-        
-      } catch (xlsRetryError) {
-        console.error('❌ .xls 파일 재시도도 실패:', xlsRetryError.message);
-        throw new Error(`파일 형식이 손상되었거나 지원되지 않는 .xls 파일입니다. 파일을 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요. (오류: ${xlsRetryError.message})`);
-      }
+      throw new Error(`구형 Excel 파일(.xls) 처리에 실패했습니다. 파일을 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요.`);
     }
-    
   } else {
     // .xlsx 파일을 위한 일반적인 처리
     console.log('📋 .xlsx 파일 처리');
@@ -341,7 +473,7 @@ async function readExcelFileWithXLSX(filePath) {
   return { headers, data };
 }
 
-// ExcelJS를 사용한 Excel 파일 읽기 (fallback)
+// ExcelJS를 사용한 Excel 파일 읽기 (render 환경 최적화)
 async function readExcelFileWithExcelJS(filePath) {
   const workbook = new ExcelJS.Workbook();
   
@@ -351,13 +483,27 @@ async function readExcelFileWithExcelJS(filePath) {
   workbook.created = new Date();
   workbook.modified = new Date();
   
-  // 안전한 옵션으로 파일 읽기 (메타데이터 최소화)
-  await workbook.xlsx.readFile(filePath, {
+  // render 환경에서 메모리 사용량 제한
+  const isProduction = process.env.NODE_ENV === 'production';
+  
+  // render 환경에 최적화된 옵션으로 파일 읽기
+  const readOptions = {
     sharedStrings: 'ignore', // 메타데이터 문제 방지
     hyperlinks: 'ignore',
     worksheets: 'emit',
-    styles: 'ignore' // 스타일 정보도 무시
-  });
+    styles: 'ignore', // 스타일 정보도 무시
+    pictures: 'ignore', // 이미지 무시
+    charts: 'ignore' // 차트 무시
+  };
+  
+  // production 환경에서는 더 제한적으로
+  if (isProduction) {
+    readOptions.merges = 'ignore'; // 병합 셀 무시
+    readOptions.conditionalFormattings = 'ignore'; // 조건부 서식 무시
+    readOptions.dataValidations = 'ignore'; // 데이터 검증 무시
+  }
+  
+  await workbook.xlsx.readFile(filePath, readOptions);
   
   console.log('📊 ExcelJS - 총 워크시트 개수:', workbook.worksheets.length);
   
@@ -486,12 +632,15 @@ async function readExcelFileWithExcelJS(filePath) {
     console.log(`❌ AA 컬럼 (27번째)을 찾을 수 없음 - 총 헤더 개수: ${headers.length}`);
   }
   
-  // 3. 데이터 읽기
+  // 3. 데이터 읽기 (render 환경 최적화)
   const data = [];
   const dataStartRow = headerRowNum + 1;
-  const maxRowsToProcess = bestWorksheet.rowCount; // 모든 행 처리하도록 변경
   
-  console.log(`📋 데이터 읽기 시작: ${dataStartRow}행부터 ${maxRowsToProcess}행까지 (총 ${bestWorksheet.rowCount}행)`);
+  // render 환경에서 처리할 최대 행 수 제한
+  const maxRowLimit = isProduction ? 1000 : 5000;
+  const maxRowsToProcess = Math.min(bestWorksheet.rowCount, maxRowLimit);
+  
+  console.log(`📋 데이터 읽기 시작: ${dataStartRow}행부터 ${maxRowsToProcess}행까지 (총 ${bestWorksheet.rowCount}행, 제한: ${maxRowLimit}행)`);
   
   let processedRows = 0;
   let skippedRows = 0;

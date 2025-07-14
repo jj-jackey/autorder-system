@@ -251,11 +251,20 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
           throw writeError;
         }
         
-        // 개선된 Excel 읽기 함수 사용
+        // 개선된 Excel 읽기 함수 사용 (타임아웃 적용)
         const { readExcelFile } = require('../utils/converter');
         console.log('🔄 Excel 파일 읽기 시작...');
         
-        const excelData = await readExcelFile(tempFilePath);
+        // render 환경에서 타임아웃 적용
+        const isProduction = process.env.NODE_ENV === 'production';
+        const timeout = isProduction ? 20000 : 60000; // production: 20초, dev: 60초
+        
+        const excelData = await Promise.race([
+          readExcelFile(tempFilePath),
+          new Promise((_, reject) => 
+            setTimeout(() => reject(new Error(`Excel 파일 처리 시간 초과 (${timeout/1000}초)`)), timeout)
+          )
+        ]);
         
         headers = excelData.headers;
         previewData = excelData.data.slice(0, 20); // 상위 20행만
@@ -268,25 +277,71 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
           processingTime: new Date().toISOString()
         });
         
-        // 임시 파일 삭제
-        try {
-          if (fs.existsSync(tempFilePath)) {
-            fs.unlinkSync(tempFilePath);
-            console.log('🗑️ 임시 파일 삭제 완료:', tempFilePath);
+        // 즉시 임시 파일 삭제 (메모리 절약)
+        setImmediate(() => {
+          try {
+            if (fs.existsSync(tempFilePath)) {
+              fs.unlinkSync(tempFilePath);
+              console.log('🗑️ 임시 파일 삭제 완료:', tempFilePath);
+            }
+          } catch (deleteError) {
+            console.warn('⚠️ 임시 파일 삭제 실패 (무시됨):', deleteError.message);
           }
-        } catch (deleteError) {
-          console.warn('⚠️ 임시 파일 삭제 실패 (무시됨):', deleteError.message);
-        }
+        });
         
       } catch (excelError) {
-        console.error('❌ 개선된 Excel 처리 실패, 기본 방식 사용:', {
+        console.error('❌ 개선된 Excel 처리 실패:', {
           error: excelError.message,
           stack: excelError.stack?.split('\n')[0],
           fileName: originalFileName,
           fileSize: fileBuffer.length
         });
         
-        // 개선된 처리가 실패하면 기본 방식으로 fallback
+        // 구형 XLS 파일이나 시간 초과인 경우 빠른 실패
+        if (originalFileName.toLowerCase().endsWith('.xls') || 
+            excelError.message.includes('시간 초과') ||
+            excelError.message.includes('timeout')) {
+          
+          // 임시 파일 즉시 정리
+          setImmediate(() => {
+            try {
+              if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log('🗑️ XLS 실패 후 임시 파일 삭제 완료');
+              }
+            } catch (cleanupError) {
+              console.warn('⚠️ 임시 파일 정리 실패:', cleanupError.message);
+            }
+          });
+          
+          console.log('⚠️ 구형 XLS 파일 또는 시간 초과 - 즉시 실패');
+          throw new Error(`구형 Excel 파일(.xls)은 지원이 제한적입니다. 다음 방법을 시도해보세요:
+
+1. Excel에서 파일을 열고 "다른 이름으로 저장" → "Excel 통합 문서(.xlsx)" 선택
+2. 또는 Google Sheets에서 열고 .xlsx 형식으로 다운로드
+
+문제가 계속되면 CSV 형식으로 저장해보세요.`);
+        }
+        
+        // production 환경에서는 fallback 제한
+        if (isProduction) {
+          // 임시 파일 정리
+          setImmediate(() => {
+            try {
+              if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log('🗑️ Production 실패 후 임시 파일 삭제 완료');
+              }
+            } catch (cleanupError) {
+              console.warn('⚠️ 임시 파일 정리 실패:', cleanupError.message);
+            }
+          });
+          
+          console.log('❌ Production 환경에서 fallback 제한');
+          throw new Error('파일 처리에 실패했습니다. 파일이 손상되었거나 지원되지 않는 형식일 수 있습니다.');
+        }
+        
+        // 개발 환경에서만 기본 방식으로 fallback
         try {
           console.log('🔄 기본 Excel 처리 방식으로 fallback...');
           const workbook = new ExcelJS.Workbook();
@@ -297,7 +352,13 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
           workbook.created = new Date();
           workbook.modified = new Date();
           
-          await workbook.xlsx.load(fileBuffer);
+          // fallback도 타임아웃 적용 (10초)
+          await Promise.race([
+            workbook.xlsx.load(fileBuffer),
+            new Promise((_, reject) => 
+              setTimeout(() => reject(new Error('Fallback 처리 시간 초과 (10초)')), 10000)
+            )
+          ]);
           const worksheet = workbook.getWorksheet(1);
           
           if (worksheet) {
@@ -360,6 +421,18 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
         } catch (fallbackError) {
           console.error('❌ 기본 Excel 처리도 실패:', fallbackError.message);
           
+          // 임시 파일 정리
+          setImmediate(() => {
+            try {
+              if (fs.existsSync(tempFilePath)) {
+                fs.unlinkSync(tempFilePath);
+                console.log('🗑️ 실패 후 임시 파일 삭제 완료');
+              }
+            } catch (cleanupError) {
+              console.warn('⚠️ 임시 파일 정리 실패:', cleanupError.message);
+            }
+          });
+          
           // .xls 파일인 경우 특별 안내 메시지
           if (originalFileName.toLowerCase().endsWith('.xls')) {
             throw new Error(`구형 Excel 파일(.xls)은 지원이 제한적입니다. 다음 방법을 시도해보세요:\n\n1. Excel에서 파일을 열고 "다른 이름으로 저장" → "Excel 통합 문서(.xlsx)" 선택\n2. 또는 Google Sheets에서 열고 .xlsx 형식으로 다운로드\n\n문제가 계속되면 CSV 형식으로 저장해보세요.`);
@@ -401,6 +474,24 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
       fileSize: req.file?.size,
       timestamp: new Date().toISOString()
     });
+    
+    // 최종 오류 시 임시 파일 정리
+    if (req.file) {
+      setImmediate(() => {
+        try {
+          const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../uploads');
+          const tempFileName = `temp_${Date.now()}_${Math.random().toString(36).substr(2, 9)}.xlsx`;
+          const tempFilePath = path.join(tempDir, tempFileName);
+          
+          if (fs.existsSync(tempFilePath)) {
+            fs.unlinkSync(tempFilePath);
+            console.log('🗑️ 최종 오류 후 임시 파일 정리 완료');
+          }
+        } catch (cleanupError) {
+          console.warn('⚠️ 최종 임시 파일 정리 실패:', cleanupError.message);
+        }
+      });
+    }
     
     res.status(500).json({ 
       error: '파일 처리 중 오류가 발생했습니다.', 
