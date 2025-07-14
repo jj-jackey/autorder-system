@@ -3,7 +3,6 @@
   "name": "autorder-system",
   "functions": {
     "server.js": {
-      "runtime": "@vercel/node@18",
       "maxDuration": 300
     }
   },
