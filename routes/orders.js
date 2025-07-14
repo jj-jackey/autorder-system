@@ -90,19 +90,24 @@ const upload = multer({
       size: file.size
     });
     
-    const allowedTypes = /xlsx|xls|csv/;
-    const extname = allowedTypes.test(path.extname(decodedFileName).toLowerCase());
-    const mimetype = allowedTypes.test(file.mimetype) || 
-                     file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
-                     file.mimetype === 'application/vnd.ms-excel' ||
-                     file.mimetype === 'text/csv' ||
-                     file.mimetype === 'application/octet-stream'; // 일부 브라우저에서 Excel을 이렇게 인식
+    // 이진 형식 XLS 파일만 차단 (ZIP 형식은 허용)
+    // 매직 바이트는 실제 파일 업로드 시 확인하고, 여기서는 기본 확장자 검증만 수행
     
-    if (mimetype && extname) {
-      console.log('✅ 파일 필터 통과');
+    // 허용되는 파일 형식 검사 (Excel, CSV 허용)
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const hasValidExtension = allowedExtensions.some(ext => 
+      path.extname(decodedFileName).toLowerCase() === ext
+    );
+    
+    if (hasValidExtension) {
+      console.log('✅ 파일 필터 통과:', decodedFileName);
       return cb(null, true);
     } else {
-      console.log('❌ 파일 필터 실패:', { mimetype, extname, decodedFileName });
+      console.log('❌ 파일 필터 실패:', { 
+        fileName: decodedFileName, 
+        extension: path.extname(decodedFileName).toLowerCase(),
+        mimetype: file.mimetype 
+      });
       cb(new Error('파일 형식이 지원되지 않습니다. Excel(.xlsx, .xls) 또는 CSV 파일만 업로드 가능합니다.'));
     }
   }
@@ -130,6 +135,59 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
       encoding: req.file.encoding,
       fileType: req.body.fileType || 'order'
     });
+
+    // 매우 구형 BIFF 포맷 파일 확인 (매직 바이트 검사, Excel 2016+ 호환)
+    if (req.file.buffer && req.file.buffer.length >= 8) {
+      const bytes = req.file.buffer;
+      
+      console.log('🔍 서버 Excel 파일 포맷 확인:', originalFileName);
+      console.log('📋 첫 16바이트:', Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+      
+      let isBiffBlocked = false;
+      
+      // 1. ZIP 형식 확인 (OOXML, BIFF12 등)
+      if (bytes.length >= 4) {
+        const isZIP = bytes[0] === 0x50 && bytes[1] === 0x4B &&
+                     (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07) &&
+                     (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08);
+        
+        if (isZIP) {
+          console.log('✅ ZIP 기반 Excel 파일 감지 (OOXML/BIFF12):', originalFileName);
+          // ZIP 형식이면 OOXML 또는 BIFF12 (허용)
+        } else {
+          // 2. 매우 구형인 BIFF 시그니처만 확인 (Excel 2016+ 호환)
+          const biffSignature = (bytes[1] << 8) | bytes[0]; // Little-endian
+          const biffVersion = (bytes[3] << 8) | bytes[2];
+          
+          // 매우 구형인 BIFF2-BIFF5만 차단 (BIFF8은 Excel 2016+ 호환)
+          if (biffSignature === 0x0009 || biffSignature === 0x0209 || 
+              biffSignature === 0x0409 || biffSignature === 0x0805) {
+            console.log('❌ 매우 구형 BIFF 시그니처 감지:', originalFileName, 'Signature:', biffSignature.toString(16));
+            isBiffBlocked = true;
+          } else {
+            // OLE2 구조는 Excel 2016에서도 사용하므로 허용
+            const isOLE2 = bytes[0] === 0xD0 && bytes[1] === 0xCF && 
+                           bytes[2] === 0x11 && bytes[3] === 0xE0 &&
+                           bytes[4] === 0xA1 && bytes[5] === 0xB1 &&
+                           bytes[6] === 0x1A && bytes[7] === 0xE1;
+            
+            if (isOLE2) {
+              console.log('✅ OLE2 구조 감지 (Excel 2016 호환):', originalFileName);
+              // OLE2 구조이지만 현대 Excel 호환 (허용)
+            }
+          }
+        }
+      }
+      
+      // 구형 BIFF 포맷 차단
+      if (isBiffBlocked) {
+        return res.status(400).json({ 
+          error: '매우 구형 BIFF 포맷 Excel 파일은 지원되지 않습니다. Excel에서 .xlsx 형식으로 저장 후 업로드해주세요.',
+          fileType: 'binary-xls',
+          fileName: originalFileName
+        });
+      }
+    }
 
     // 파일명 생성
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);

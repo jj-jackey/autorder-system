@@ -147,25 +147,134 @@ function handleFileSelect(e, type) {
     }
 }
 
+// 파일이 매우 구형 BIFF 포맷인지 확인하는 함수 (Excel 2016+ 호환)
+async function checkIfBinaryXLS(file) {
+    return new Promise((resolve) => {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const arrayBuffer = e.target.result;
+            const bytes = new Uint8Array(arrayBuffer);
+            
+            console.log('🔍 Excel 파일 포맷 확인:', file.name);
+            console.log('📋 첫 16바이트:', Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+            
+            // 1. ZIP 형식 확인 (OOXML, BIFF12 등)
+            if (bytes.length >= 4) {
+                const isZIP = bytes[0] === 0x50 && bytes[1] === 0x4B &&
+                             (bytes[2] === 0x03 || bytes[2] === 0x05 || bytes[2] === 0x07) &&
+                             (bytes[3] === 0x04 || bytes[3] === 0x06 || bytes[3] === 0x08);
+                
+                if (isZIP) {
+                    console.log('✅ ZIP 기반 Excel 파일 감지 (OOXML/BIFF12):', file.name);
+                    resolve(false); // ZIP 형식이면 OOXML 또는 BIFF12 (허용)
+                    return;
+                }
+            }
+            
+            // 2. 매우 구형인 BIFF 시그니처만 확인 (Excel 2016+ 호환)
+            if (bytes.length >= 4) {
+                // BIFF2: 0x0009, BIFF3: 0x0209, BIFF4: 0x0409, BIFF5: 0x0805
+                // BIFF8: 0x0809 (Excel 97-2003)는 현대 Excel에서도 사용 가능하므로 제외
+                const biffSignature = (bytes[1] << 8) | bytes[0]; // Little-endian
+                const biffVersion = (bytes[3] << 8) | bytes[2];
+                
+                // 매우 구형인 BIFF2-BIFF5만 차단 (BIFF8은 Excel 2016+ 호환)
+                if (biffSignature === 0x0009 || biffSignature === 0x0209 || 
+                    biffSignature === 0x0409 || biffSignature === 0x0805) {
+                    console.log('❌ 매우 구형 BIFF 시그니처 감지:', file.name, 'Signature:', biffSignature.toString(16));
+                    resolve(true); // 매우 구형 BIFF 형식 (차단)
+                    return;
+                }
+            }
+            
+            // OLE2 구조는 Excel 2016에서도 사용하므로 허용
+            if (bytes.length >= 8) {
+                const isOLE2 = bytes[0] === 0xD0 && bytes[1] === 0xCF && 
+                              bytes[2] === 0x11 && bytes[3] === 0xE0 &&
+                              bytes[4] === 0xA1 && bytes[5] === 0xB1 &&
+                              bytes[6] === 0x1A && bytes[7] === 0xE1;
+                
+                if (isOLE2) {
+                    console.log('✅ OLE2 구조 감지 (Excel 2016 호환):', file.name);
+                    resolve(false); // OLE2 구조이지만 현대 Excel 호환 (허용)
+                    return;
+                }
+            }
+            
+            // 4. CSV 파일 확인
+            if (bytes.length >= 3) {
+                // UTF-8 BOM 확인
+                const hasUTF8BOM = bytes[0] === 0xEF && bytes[1] === 0xBB && bytes[2] === 0xBF;
+                
+                // 텍스트 파일인지 확인 (처음 100바이트가 모두 ASCII/UTF-8 범위인지)
+                let isTextFile = true;
+                const checkLength = Math.min(100, bytes.length);
+                for (let i = hasUTF8BOM ? 3 : 0; i < checkLength; i++) {
+                    const byte = bytes[i];
+                    // 일반적인 텍스트 문자 범위 (개행, 탭, 출력 가능한 ASCII)
+                    if (!(byte >= 0x20 && byte <= 0x7E) && byte !== 0x09 && byte !== 0x0A && byte !== 0x0D) {
+                        isTextFile = false;
+                        break;
+                    }
+                }
+                
+                if (isTextFile || hasUTF8BOM) {
+                    console.log('✅ 텍스트/CSV 파일 감지:', file.name);
+                    resolve(false);
+                    return;
+                }
+            }
+            
+            // 5. 알 수 없는 형식은 안전하게 허용
+            console.log('⚠️ 알 수 없는 파일 형식 (허용):', file.name);
+            resolve(false);
+        };
+        
+        reader.onerror = function() {
+            console.error('파일 읽기 오류:', file.name);
+            resolve(false); // 읽기 오류 시 안전하게 허용
+        };
+        
+        // 파일의 첫 1024바이트만 읽어서 헤더 확인
+        const blob = file.slice(0, 1024);
+        reader.readAsArrayBuffer(blob);
+    });
+}
+
 // 파일 처리
 async function processFile(file, type) {
     // 새로운 모드별 처리가 있는 경우 해당 함수 호출
     if (type === 'supplier-direct' || type === 'template-mode') {
         return await processFileForMode(file, type);
     }
-    // 파일 형식 검증
-    const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                         'application/vnd.ms-excel', 'text/csv'];
-    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
-    
-    if (!allowedTypes.includes(file.type) && !allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-        showAlert('error', '지원하지 않는 파일 형식입니다. Excel(.xlsx, .xls) 또는 CSV 파일을 업로드해주세요.');
+    // 파일 형식 검증 - 매우 구형 BIFF 포맷만 차단 (Excel 2016+ 호환)
+    const isBiffBlocked = await checkIfBinaryXLS(file);
+    if (isBiffBlocked) {
+        showUploadResult(null, type, true, 
+            '❌ 매우 구형 BIFF 포맷 Excel 파일은 지원되지 않습니다.<br><br>' +
+            '📋 <strong>해결 방법:</strong><br>' +
+            '1. Excel에서 해당 파일을 열어주세요<br>' +
+            '2. "파일 → 다른 이름으로 저장" 메뉴를 선택하세요<br>' +
+            '3. 파일 형식을 <strong>"Excel 통합 문서(*.xlsx)"</strong>로 변경하세요<br>' +
+            '4. 변환된 .xlsx 파일을 다시 업로드해주세요<br><br>' +
+            '💡 Excel 2016+ 에서 저장한 파일은 정상적으로 업로드됩니다.'
+        );
         return;
     }
     
-    // .xls 파일에 대한 경고 표시 (해당 업로드 영역에)
-    if (file.name.toLowerCase().endsWith('.xls')) {
-        showUploadWarning(type, '⚠️ 구형 Excel 파일(.xls)은 지원이 제한적입니다. 업로드를 시도하지만, 오류가 발생할 경우 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요.');
+    // 허용되는 파일 형식 검증 (Excel, CSV 허용)
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const hasValidExtension = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    
+    if (!hasValidExtension) {
+        showUploadResult(null, type, true, 
+            '❌ 지원하지 않는 파일 형식입니다.<br><br>' +
+            '📋 <strong>지원 형식:</strong><br>' +
+            '• Excel 파일(.xlsx, .xls) - Excel 2016+ 호환<br>' +
+            '• CSV 파일(.csv)<br><br>' +
+            '💡 매우 구형 BIFF 포맷 파일은 .xlsx로 변환 후 업로드해주세요.'
+        );
+        return;
     }
     
     // 파일 크기 검증 (10MB)
@@ -184,9 +293,12 @@ async function processFile(file, type) {
         // 처리 상태 설정
         isProcessing = true;
         
-        // 이전 요청 취소 (있는 경우)
+        // 이전 요청이 있으면 정리하고 잠시 대기
         if (currentUploadController) {
             currentUploadController.abort();
+            currentUploadController = null;
+            // 이전 요청 정리 대기
+            await new Promise(resolve => setTimeout(resolve, 100));
         }
         
         // 새 AbortController 생성
@@ -219,7 +331,7 @@ async function processFile(file, type) {
         
         // 30초 타임아웃 설정
         const timeoutId = setTimeout(() => {
-            if (currentUploadController) {
+            if (currentUploadController && !currentUploadController.signal.aborted) {
                 currentUploadController.abort();
                 showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
             }
@@ -259,54 +371,46 @@ async function processFile(file, type) {
                 if (!currentOrderFileId) {
                     showAlert('info', '📝 발주서가 업로드되었습니다. 주문서를 업로드하거나 하단의 "직접 입력" 섹션을 이용해 주문 정보를 입력하세요.');
                     
-                    // 직접 입력 섹션 강조
-                    const directInputSection = document.getElementById('directInputStep');
-                    if (directInputSection) {
-                        directInputSection.style.animation = 'pulse 2s infinite';
-                        directInputSection.style.border = '2px solid #007bff';
-                        directInputSection.style.backgroundColor = '#f8f9fa';
-                        
-                        // 5초 후 강조 제거
-                        setTimeout(() => {
-                            directInputSection.style.animation = '';
-                            directInputSection.style.border = '';
-                            directInputSection.style.backgroundColor = '';
-                        }, 5000);
+                    // 발주서만 업로드된 상태에서 주문서 업로드 안내 표시
+                    const orderAlert = document.getElementById('uploadAlertOrder');
+                    if (orderAlert && !orderAlert.innerHTML.includes('주문서를 업로드하거나')) {
+                        orderAlert.innerHTML = '<div class="alert alert-info"><i class="fas fa-info-circle"></i> 주문서를 업로드하거나 하단 직접 입력 섹션을 이용하세요.</div>';
                     }
+                } else {
+                    // 두 파일 모두 업로드된 경우만 STEP 2로 이동
+                    setTimeout(() => {
+                        showStep(2);
+                        setupMapping();
+                    }, 1000);
                 }
-            }
-            
-            // 두 파일이 모두 업로드되었을 때만 STEP 2로 이동
-            console.log('🔍 파일 업로드 상태 확인:', {
-                currentOrderFileId: currentOrderFileId,
-                currentSupplierFileId: currentSupplierFileId,
-                type: type
-            });
-            
-            if (currentOrderFileId && currentSupplierFileId) {
-                console.log('✅ 두 파일이 모두 업로드됨 - STEP 2로 이동');
-                console.log('📊 파일 헤더 정보:', {
-                    orderFileHeaders: orderFileHeaders,
-                    supplierFileHeaders: supplierFileHeaders
-                });
-                
-                try {
+            } else if (type === 'order' && currentSupplierFileId) {
+                // 주문서가 업로드되고 발주서도 이미 있는 경우 STEP 2로 이동
+                setTimeout(() => {
                     showStep(2);
                     setupMapping();
-                    console.log('✅ STEP 2 표시 및 매핑 설정 완료');
-                } catch (error) {
-                    console.error('❌ STEP 2 표시 또는 매핑 설정 오류:', error);
-                    showAlert('error', 'STEP 2 표시 중 오류가 발생했습니다. 페이지를 새로고침해주세요.');
-                }
-            } else {
-                console.log('⚠️ 아직 두 파일이 모두 업로드되지 않음');
+                }, 1000);
             }
-        } else {
-            let errorMessage = result.error || '파일 업로드에 실패했습니다.';
             
-            // .xls 파일 오류인 경우 특별 안내
-            if (file.name.toLowerCase().endsWith('.xls') && errorMessage.includes('Excel 파일')) {
-                errorMessage = `${errorMessage}\n\n💡 해결 방법:\n1. Excel에서 파일을 열고 "파일 > 다른 이름으로 저장" 선택\n2. 파일 형식을 "Excel 통합 문서 (*.xlsx)" 선택\n3. 새로 저장된 .xlsx 파일을 업로드해주세요`;
+            updateUploadStatusAndButtons();
+            
+        } else {
+            console.error('서버 응답 오류:', result);
+            
+            // 서버에서 보낸 구체적인 오류 메시지 처리
+            let errorMessage = result.error || '파일 업로드 중 오류가 발생했습니다.';
+            
+            // .xls 파일 관련 오류인 경우 친화적인 메시지로 변경
+            if (errorMessage.includes('Can\'t find end of central directory') || 
+                errorMessage.includes('ZIP') || 
+                errorMessage.includes('BIFF') ||
+                file.name.toLowerCase().endsWith('.xls')) {
+                errorMessage = '❌ 구형 Excel 파일(.xls)은 지원에 제한이 있습니다.<br><br>' +
+                            '📋 <strong>해결 방법:</strong><br>' +
+                            '1. Excel에서 해당 파일을 열어주세요<br>' +
+                            '2. "파일 → 다른 이름으로 저장" 메뉴를 선택하세요<br>' +
+                            '3. 파일 형식을 <strong>"Excel 통합 문서(*.xlsx)"</strong>로 변경하세요<br>' +
+                            '4. 변환된 .xlsx 파일을 다시 업로드해주세요<br><br>' +
+                            '💡 최신 Excel 형식(.xlsx)을 사용하시면 안정적으로 업로드됩니다.';
             }
             
             // 해당 업로드 영역에 오류 메시지 표시
@@ -330,10 +434,10 @@ async function processFile(file, type) {
         isProcessing = false;
         currentUploadController = null;
         
-        // 요청 취소 오류인 경우 특별 처리
+        // 요청 취소 오류인 경우 조용히 처리 (사용자에게 알리지 않음)
         if (error.name === 'AbortError') {
             console.log('업로드 요청이 취소되었습니다.');
-            showAlert('info', '업로드가 취소되었습니다.');
+            // AbortError는 의도적인 취소이므로 별도 알림 없이 조용히 처리
             return;
         }
         
@@ -368,14 +472,51 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
     
     // 오류 케이스 처리
     if (isError) {
+        // 실패한 파일의 상태 초기화
+        if (type === 'order') {
+            currentOrderFileId = null;
+            orderFileHeaders = [];
+        } else {
+            currentSupplierFileId = null;
+            supplierFileHeaders = [];
+        }
+        
+        // STEP 2 숨기기 (두 파일이 모두 업로드되지 않았으므로)
+        if (!currentOrderFileId || !currentSupplierFileId) {
+            showStep(1);
+            
+            // 매핑 관련 상태 초기화
+            currentMapping = {};
+            
+            // STEP 2 UI 완전히 초기화
+            const step2 = document.getElementById('step2');
+            if (step2) {
+                step2.classList.add('hidden');
+            }
+            
+            // 매핑 관련 컨테이너 초기화
+            const sourceFieldsContainer = document.getElementById('sourceFields');
+            const targetFieldsContainer = document.getElementById('targetFields');
+            if (sourceFieldsContainer) sourceFieldsContainer.innerHTML = '';
+            if (targetFieldsContainer) {
+                const targetFields = targetFieldsContainer.querySelectorAll('.field-item');
+                targetFields.forEach(field => {
+                    field.style.background = '';
+                    field.style.color = '';
+                    field.innerHTML = field.dataset.target;
+                });
+            }
+        }
+        
+        // 업로드 상태 및 버튼 업데이트
+        updateUploadStatusAndButtons();
+        
         uploadAlert.innerHTML = `
             <div class="alert alert-error">
                 ❌ ${fileTypeText} 파일 업로드 실패<br>
                 <strong>오류:</strong> ${errorMessage}
-                <div style="margin-top: 10px;">
-                    <button class="btn btn-primary" onclick="restartFileUpload('${type}')" style="padding: 8px 16px; font-size: 0.9em;">
-                        🔄 ${fileTypeText} 다시 업로드
-                    </button>
+                <div style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #17a2b8; border-radius: 4px;">
+                    💡 위의 ${fileTypeText} 업로드 영역에서 다른 파일을 선택해주세요.
                 </div>
             </div>
         `;
@@ -394,39 +535,44 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
                 <strong>검증 결과:</strong> ${result.validation.validRows}/${result.validation.totalRows}행 처리 가능 
                 (성공률: ${result.validation.summary.successRate}%)<br>
                 <strong>필드 수:</strong> ${result.headers.length}개
-            </div>
-        `;
-    } else if (emptyTemplateWarning) {
-        uploadAlert.innerHTML = `
-            <div class="alert alert-warning">
-                ⚠️ ${fileTypeText} 파일 업로드 완료 (빈 템플릿 감지)<br>
-                <strong>파일명:</strong> ${result.fileName}<br>
-                <strong>안내:</strong> ${emptyTemplateWarning.message}<br>
-                <strong>필드 수:</strong> ${result.headers.length}개
-                <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 4px; font-size: 0.9em;">
-                    💡 <strong>도움말:</strong><br>
-                    - <strong>주문서</strong>: 실제 주문 데이터가 있는 파일을 업로드하세요<br>
-                    - <strong>발주서 템플릿</strong>: 빈 양식 파일을 업로드하세요
+                <div style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #28a745; border-radius: 4px;">
+                    💡 다른 ${fileTypeText} 파일로 변경하려면 위의 업로드 영역을 이용해주세요.
                 </div>
             </div>
         `;
     } else {
+        const validationMessages = result.validation.errors.map(error => `• ${error.message}`).join('<br>');
         uploadAlert.innerHTML = `
             <div class="alert alert-warning">
-                ⚠️ ${fileTypeText} 파일 업로드 완료 (일부 오류 있음)<br>
+                ⚠️ ${fileTypeText} 파일 업로드 완료 (일부 문제 있음)<br>
                 <strong>파일명:</strong> ${result.fileName}<br>
-                <strong>오류:</strong> ${result.validation.errorRows}개 행에서 오류 발견<br>
-                <strong>경고:</strong> ${result.validation.warningRows}개 행에서 경고 발견<br>
-                <strong>필드 수:</strong> ${result.headers.length}개
+                <strong>검증 결과:</strong> ${result.validation.validRows}/${result.validation.totalRows}행 처리 가능<br>
+                <strong>문제점:</strong><br>${validationMessages}
+                <div style="margin-top: 10px; padding: 8px; background-color: #f8f9fa; border-left: 4px solid #ffc107; border-radius: 4px;">
+                    💡 다른 ${fileTypeText} 파일로 변경하려면 위의 업로드 영역을 이용해주세요.
+                </div>
             </div>
         `;
+    }
+    
+    // 빈 템플릿 경고가 있으면 추가 안내
+    if (emptyTemplateWarning) {
+        const existingAlert = uploadAlert.querySelector('.alert');
+        if (existingAlert) {
+            existingAlert.innerHTML += `
+                <div style="margin-top: 10px; padding: 10px; background-color: #fff3cd; border: 1px solid #ffeaa7; border-radius: 4px;">
+                    <strong>💡 템플릿 안내:</strong><br>
+                    ${emptyTemplateWarning.message}
+                </div>
+            `;
+        }
     }
     
     // 업로드 상태에 따른 안내 메시지 및 버튼 가시성 제어
     updateUploadStatusAndButtons();
     
-    // 두 파일이 모두 업로드되었을 때 안내 메시지 추가
-    if (currentOrderFileId && currentSupplierFileId) {
+    // 두 파일이 모두 업로드되었을 때 안내 메시지 추가 (성공 케이스에서만)
+    if (!isError && currentOrderFileId && currentSupplierFileId) {
         // 양쪽 모두에 완료 메시지 추가
         const completeMessage = `
             <div class="alert alert-info" style="margin-top: 10px;">
@@ -443,7 +589,7 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
         if (supplierAlert && !supplierAlert.innerHTML.includes('두 파일이 모두 업로드되었습니다')) {
             supplierAlert.innerHTML += completeMessage;
         }
-    } else if (!currentOrderFileId && currentSupplierFileId) {
+    } else if (!isError && !currentOrderFileId && currentSupplierFileId) {
         // 발주서만 업로드된 경우 - 주문서 업로드 영역에 안내 메시지 표시
         const orderAlert = document.getElementById('uploadAlertOrder');
         if (orderAlert && !orderAlert.innerHTML.includes('주문서를 업로드하거나')) {
@@ -477,6 +623,19 @@ function showUploadResult(result, type, isError = false, errorMessage = '') {
 // 매핑 설정
 function setupMapping() {
     console.log('🔧 setupMapping 함수 시작');
+    
+    // 두 파일이 모두 업로드되었는지 확인
+    if (!currentOrderFileId) {
+        console.warn('⚠️ 주문서 파일이 업로드되지 않았습니다.');
+        showAlert('warning', '주문서 파일을 먼저 업로드해주세요.');
+        return;
+    }
+    
+    if (!currentSupplierFileId) {
+        console.warn('⚠️ 발주서 파일이 업로드되지 않았습니다.');
+        showAlert('warning', '발주서 파일을 먼저 업로드해주세요.');
+        return;
+    }
     
     try {
         // 소스 필드 초기화 - 주문서 필드만
@@ -564,6 +723,10 @@ function setupMapping() {
         
         // GENERATE ORDER 버튼 초기 비활성화
         updateGenerateOrderButton();
+        
+        // 자동 매핑 실행
+        console.log('🔄 자동 매핑 시작...');
+        performAutoMatching();
         
             console.log('✅ setupMapping 함수 완료');
     } catch (error) {
@@ -859,19 +1022,23 @@ function resetMappingState() {
         field.innerHTML = field.dataset.target;
     });
     
-    // 소스 필드 다시 표시
+    // 소스 필드 다시 표시 (주문서 헤더가 있는 경우에만)
     const sourceFieldsContainer = document.getElementById('sourceFields');
-    sourceFieldsContainer.innerHTML = '';
-    
-    orderFileHeaders.forEach(header => {
-        const fieldDiv = document.createElement('div');
-        fieldDiv.className = 'field-item';
-        fieldDiv.textContent = header;
-        fieldDiv.dataset.source = header;
-        fieldDiv.dataset.fileType = 'order';
-        fieldDiv.onclick = () => selectSourceField(fieldDiv);
-        sourceFieldsContainer.appendChild(fieldDiv);
-    });
+    if (sourceFieldsContainer) {
+        sourceFieldsContainer.innerHTML = '';
+        
+        if (orderFileHeaders && orderFileHeaders.length > 0) {
+            orderFileHeaders.forEach(header => {
+                const fieldDiv = document.createElement('div');
+                fieldDiv.className = 'field-item';
+                fieldDiv.textContent = header;
+                fieldDiv.dataset.source = header;
+                fieldDiv.dataset.fileType = 'order';
+                fieldDiv.onclick = () => selectSourceField(fieldDiv);
+                sourceFieldsContainer.appendChild(fieldDiv);
+            });
+        }
+    }
 }
 
 // 자동 매핑 적용
@@ -3003,6 +3170,9 @@ function restartFileUpload(type) {
             showAlert('info', `${fileTypeText} 파일이 초기화되었습니다. 다시 업로드해주세요.`);
         }
         
+        // 업로드 상태 및 버튼 업데이트
+        updateUploadStatusAndButtons();
+        
         // STEP 1으로 돌아가기 (두 파일이 모두 없어진 경우)
         if (!currentOrderFileId && !currentSupplierFileId) {
             showStep(1);
@@ -3638,26 +3808,50 @@ async function processDefaultTemplateMode() {
 async function processFileForMode(file, type) {
     const mode = window.currentWorkMode || 'fileUpload';
     
-    // 파일 형식 검증
-    const allowedTypes = ['application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 
-                         'application/vnd.ms-excel', 'text/csv'];
-    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    // 파일 형식 검증 - 매우 구형 BIFF 포맷만 차단 (Excel 2016+ 호환)
+    const isBiffBlocked = await checkIfBinaryXLS(file);
+    if (isBiffBlocked) {
+        const baseType = type.replace('-direct', '').replace('-mode', '');
+        const typeText = baseType.includes('supplier') ? '발주서' : '주문서';
+        
+        showUploadResult(null, baseType, true, 
+            `❌ 매우 구형 BIFF 포맷 Excel 파일은 지원되지 않습니다.<br><br>` +
+            `📋 <strong>해결 방법:</strong><br>` +
+            `1. Excel에서 해당 파일을 열어주세요<br>` +
+            `2. "파일 → 다른 이름으로 저장" 메뉴를 선택하세요<br>` +
+            `3. 파일 형식을 <strong>"Excel 통합 문서(*.xlsx)"</strong>로 변경하세요<br>` +
+            `4. 변환된 .xlsx 파일을 다시 업로드해주세요<br><br>` +
+            `💡 Excel 2016+ 에서 저장한 파일은 정상적으로 업로드됩니다.`
+        );
+        return;
+    }
     
-    if (!allowedTypes.includes(file.type) && !allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext))) {
-        showAlert('error', '지원하지 않는 파일 형식입니다. Excel(.xlsx, .xls) 또는 CSV 파일을 업로드해주세요.');
+    // 허용되는 파일 형식 검증 (Excel, CSV 허용)
+    const allowedExtensions = ['.xlsx', '.xls', '.csv'];
+    const hasValidExtension = allowedExtensions.some(ext => file.name.toLowerCase().endsWith(ext));
+    
+    if (!hasValidExtension) {
+        const baseType = type.replace('-direct', '').replace('-mode', '');
+        showUploadResult(null, baseType, true, 
+            '❌ 지원하지 않는 파일 형식입니다.<br><br>' +
+            '📋 <strong>지원 형식:</strong><br>' +
+            '• Excel 파일(.xlsx, .xls) - Excel 2016+ 호환<br>' +
+            '• CSV 파일(.csv)<br><br>' +
+            '💡 매우 구형 BIFF 포맷 파일은 .xlsx로 변환 후 업로드해주세요.'
+        );
         return;
     }
     
     // 파일 크기 검증 (10MB)
     if (file.size > 10 * 1024 * 1024) {
-        showAlert('error', '파일 크기가 너무 큽니다. 10MB 이하의 파일을 업로드해주세요.');
-        return;
-    }
-    
-    // .xls 파일에 대한 경고 표시 (해당 업로드 영역에)
-    if (file.name.toLowerCase().endsWith('.xls')) {
         const baseType = type.replace('-direct', '').replace('-mode', '');
-        showUploadWarning(baseType, '⚠️ 구형 Excel 파일(.xls)은 지원이 제한적입니다. 업로드를 시도하지만, 오류가 발생할 경우 Excel에서 .xlsx 형식으로 저장 후 다시 시도해주세요.');
+        showUploadResult(null, baseType, true, 
+            '❌ 파일 크기가 너무 큽니다.<br><br>' +
+            '📋 <strong>파일 크기 제한:</strong><br>' +
+            '• 최대 10MB까지 업로드 가능<br><br>' +
+            '💡 파일 크기를 줄이거나 필요한 데이터만 포함하여 다시 업로드해주세요.'
+        );
+        return;
     }
     
     try {
@@ -3693,7 +3887,7 @@ async function processFileForMode(file, type) {
         
         // 30초 타임아웃 설정
         const timeoutId = setTimeout(() => {
-            if (currentUploadController) {
+            if (currentUploadController && !currentUploadController.signal.aborted) {
                 currentUploadController.abort();
                 showAlert('error', '업로드 시간이 초과되었습니다. 파일 크기를 확인하고 다시 시도해주세요.');
             }
@@ -3763,8 +3957,18 @@ async function processFileForMode(file, type) {
         } else {
             let errorMessage = result.error || '파일 업로드에 실패했습니다.';
             
-            // .xls 파일 오류인 경우 특별 안내
-            if (file.name.toLowerCase().endsWith('.xls') && errorMessage.includes('Excel 파일')) {
+            // 매우 구형 BIFF 포맷 파일 오류인 경우 특별 안내
+            if (result.fileType === 'binary-xls' || errorMessage.includes('구형 BIFF 포맷')) {
+                errorMessage = '❌ 매우 구형 BIFF 포맷 Excel 파일은 지원되지 않습니다.<br><br>' +
+                              '📋 <strong>해결 방법:</strong><br>' +
+                              '1. Excel에서 해당 파일을 열어주세요<br>' +
+                              '2. "파일 → 다른 이름으로 저장" 메뉴를 선택하세요<br>' +
+                              '3. 파일 형식을 <strong>"Excel 통합 문서(*.xlsx)"</strong>로 변경하세요<br>' +
+                              '4. 변환된 .xlsx 파일을 다시 업로드해주세요<br><br>' +
+                              '💡 Excel 2016+ 에서 저장한 파일은 정상적으로 업로드됩니다.';
+            }
+            // 일반 .xls 파일 오류인 경우 특별 안내
+            else if (file.name.toLowerCase().endsWith('.xls') && errorMessage.includes('Excel 파일')) {
                 errorMessage = `${errorMessage}\n\n💡 해결 방법:\n1. Excel에서 파일을 열고 "파일 > 다른 이름으로 저장" 선택\n2. 파일 형식을 "Excel 통합 문서 (*.xlsx)" 선택\n3. 새로 저장된 .xlsx 파일을 업로드해주세요`;
             }
             
@@ -3914,10 +4118,28 @@ function performAutoMatching() {
     
     // 소스 필드와 타겟 필드 중 이름이 동일한 것들을 찾아서 매핑
     orderFileHeaders.forEach(sourceField => {
-        // 타겟 필드에서 동일한 이름을 찾기
-        const matchingTargetField = supplierFileHeaders.find(targetField => 
-            sourceField === targetField
-        );
+        // 타겟 필드에서 동일한 이름을 찾기 (완전 일치 또는 "원본 - 타겟" 형태 매칭)
+        const matchingTargetField = supplierFileHeaders.find(targetField => {
+            // 1. 완전 일치
+            if (sourceField === targetField) {
+                return true;
+            }
+            
+            // 2. "원본 - 타겟" 형태에서 타겟 부분이 일치하는 경우
+            if (targetField.includes(' - ')) {
+                const targetPart = targetField.split(' - ')[1]; // "상품명 - 상품명" → "상품명"
+                if (sourceField === targetPart) {
+                    return true;
+                }
+            }
+            
+            // 3. 소스 필드가 타겟 필드에 포함되어 있는 경우 (유사 매칭)
+            if (targetField.includes(sourceField) || sourceField.includes(targetField)) {
+                return true;
+            }
+            
+            return false;
+        });
         
         if (matchingTargetField) {
             // 매핑 정보 저장
