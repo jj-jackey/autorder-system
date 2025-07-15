@@ -3,7 +3,6 @@
   "name": "autorder-system",
   "functions": {
     "server.js": {
-      "runtime": "20.x",
       "maxDuration": 300
     }
   },
