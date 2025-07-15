@@ -184,11 +184,11 @@ const upload = multer({
 });
 
 // API 라우트
-const orderRoutes = require('./routes/orders');
-const emailRoutes = require('./routes/email');
-const templateRoutes = require('./routes/templates');
-const webhookRoutes = require('./routes/webhook');
-const { router: authRoutes, requireAuth } = require('./routes/auth');
+const orderRoutes = require('../routes/orders');
+const emailRoutes = require('../routes/email');
+const templateRoutes = require('../routes/templates');
+const webhookRoutes = require('../routes/webhook');
+const { router: authRoutes, requireAuth } = require('../routes/auth');
 
 app.use('/api/auth', authRoutes);
 app.use('/api/orders', orderRoutes);
