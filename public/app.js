@@ -12,6 +12,81 @@ let currentUploadController = null;
 let currentProcessingController = null;
 let isProcessing = false;
 
+// XLS 파일을 CSV로 변환하는 함수
+async function convertXlsToCsv(xlsFile) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        
+        reader.onload = function(e) {
+            try {
+                console.log('📖 XLS 파일 읽기 시작...');
+                
+                // ArrayBuffer를 사용해서 XLS 파일 읽기
+                const data = new Uint8Array(e.target.result);
+                
+                // XLSX 라이브러리로 워크북 읽기
+                const workbook = XLSX.read(data, { 
+                    type: 'array',
+                    cellText: false,
+                    cellNF: false,
+                    cellHTML: false,
+                    sheetRows: 0, // 모든 행 읽기
+                    bookType: 'xls' // XLS 형식으로 명시
+                });
+                
+                console.log('📋 워크북 읽기 성공, 시트 수:', workbook.SheetNames.length);
+                
+                // 첫 번째 시트 가져오기
+                const firstSheetName = workbook.SheetNames[0];
+                const worksheet = workbook.Sheets[firstSheetName];
+                
+                // 시트를 CSV 형식으로 변환
+                const csvData = XLSX.utils.sheet_to_csv(worksheet, {
+                    FS: ',', // 필드 구분자
+                    RS: '\n', // 행 구분자
+                    blankrows: false, // 빈 행 제외
+                    skipHidden: false,
+                    strip: false,
+                    rawNumbers: false // 숫자도 문자열로 처리
+                });
+                
+                console.log('📄 CSV 변환 성공, 크기:', csvData.length, '바이트');
+                
+                // 변환된 CSV를 File 객체로 생성
+                const originalName = xlsFile.name;
+                const csvFileName = originalName.replace(/\.xls$/i, '.csv');
+                
+                const csvBlob = new Blob([csvData], { type: 'text/csv;charset=utf-8' });
+                const csvFile = new File([csvBlob], csvFileName, { 
+                    type: 'text/csv',
+                    lastModified: new Date().getTime() 
+                });
+                
+                console.log('✅ XLS → CSV 변환 완료:', {
+                    원본파일: originalName,
+                    변환파일: csvFileName,
+                    원본크기: xlsFile.size,
+                    변환크기: csvFile.size
+                });
+                
+                resolve(csvFile);
+                
+            } catch (error) {
+                console.error('❌ XLS → CSV 변환 실패:', error);
+                reject(new Error(`XLS 파일 변환 실패: ${error.message}`));
+            }
+        };
+        
+        reader.onerror = function() {
+            console.error('❌ 파일 읽기 실패');
+            reject(new Error('파일을 읽을 수 없습니다'));
+        };
+        
+        // ArrayBuffer로 파일 읽기 시작
+        reader.readAsArrayBuffer(xlsFile);
+    });
+}
+
 // 페이지 로드 시 초기화
 document.addEventListener('DOMContentLoaded', async function() {
     // 🔐 인증 상태 확인 (API 키 없이도 사용 가능)
@@ -291,15 +366,37 @@ async function processFile(file, type) {
         return;
     }
     
-    // .xls 파일에 대한 사전 경고 (차단하지는 않음)
+    // .xls 파일 자동 변환 처리
     if (file.name.toLowerCase().endsWith('.xls')) {
         showUploadWarning(type, 
-            '⚠️ 구형 Excel 파일(.xls)이 감지되었습니다.<br><br>' +
-            '💡 <strong>권장사항:</strong><br>' +
-            '• 업로드 실패 시 Excel에서 "다른 이름으로 저장" → ".xlsx" 형식으로 변환해보세요<br>' +
-            '• 또는 Google Sheets에서 열고 .xlsx로 다운로드해보세요<br><br>' +
-            '🔄 지금 업로드를 진행합니다...'
+            '🔄 구형 Excel 파일(.xls)을 호환 형식으로 자동 변환 중입니다...<br><br>' +
+            '💡 <strong>자동 처리:</strong><br>' +
+            '• XLS 파일을 CSV 형식으로 변환합니다<br>' +
+            '• 변환 후 자동으로 업로드를 진행합니다<br>' +
+            '• 잠시만 기다려주세요...'
         );
+        
+        try {
+            // XLS 파일을 CSV로 자동 변환
+            const convertedFile = await convertXlsToCsv(file);
+            file = convertedFile; // 변환된 CSV 파일로 교체
+            
+            showUploadWarning(type, 
+                '✅ XLS 파일이 CSV로 성공적으로 변환되었습니다!<br><br>' +
+                '🔄 변환된 파일을 업로드 중입니다...'
+            );
+        } catch (convertError) {
+            console.error('XLS 변환 실패:', convertError);
+            showUploadResult(null, type, true, 
+                '❌ XLS 파일 변환에 실패했습니다.<br><br>' +
+                '💡 <strong>해결 방법:</strong><br>' +
+                '1. Excel에서 파일을 열고 "다른 이름으로 저장" 선택<br>' +
+                '2. 파일 형식을 "Excel 통합 문서(.xlsx)" 또는 "CSV(.csv)"로 변경<br>' +
+                '3. 변환된 파일을 다시 업로드해주세요<br><br>' +
+                `상세 오류: ${convertError.message}`
+            );
+            return;
+        }
     }
     
     try {
