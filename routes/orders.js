@@ -3,6 +3,7 @@ const multer = require('multer');
 const ExcelJS = require('exceljs');
 const fs = require('fs');
 const path = require('path');
+const iconv = require('iconv-lite');
 const { validateOrderData } = require('../utils/validation');
 const { convertToStandardFormat } = require('../utils/converter');
 const { uploadFile, downloadFile, saveMappingData, loadMappingData } = require('../utils/supabase');
@@ -261,19 +262,153 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
     let headers = [];
 
     if (fileExtension === '.csv') {
-      // CSV 파일 처리
-      const csvData = fileBuffer.toString('utf8');
+      // CSV 파일 처리 - 한글 인코딩 자동 감지 및 개선된 파싱 로직
+      let csvData;
+      
+      // 인코딩 자동 감지 및 변환
+      try {
+        // BOM 확인
+        const hasBom = fileBuffer.length >= 3 && 
+                      fileBuffer[0] === 0xEF && 
+                      fileBuffer[1] === 0xBB && 
+                      fileBuffer[2] === 0xBF;
+        
+        if (hasBom) {
+          // UTF-8 BOM이 있는 경우
+          console.log('📄 UTF-8 BOM 감지됨');
+          csvData = fileBuffer.slice(3).toString('utf8');
+        } else {
+          // 여러 인코딩으로 시도
+          const encodings = ['utf8', 'euc-kr', 'cp949'];
+          let bestEncoding = 'utf8';
+          let bestScore = 0;
+          
+          for (const encoding of encodings) {
+            try {
+              const testData = iconv.decode(fileBuffer, encoding);
+              
+              // 한글 문자가 제대로 디코딩되었는지 확인
+              const koreanScore = (testData.match(/[가-힣]/g) || []).length;
+              const invalidScore = (testData.match(/[�]/g) || []).length;
+              const finalScore = koreanScore - (invalidScore * 10); // 깨진 문자에 패널티
+              
+              console.log(`📊 ${encoding} 인코딩 점수: ${finalScore} (한글: ${koreanScore}, 깨짐: ${invalidScore})`);
+              
+              if (finalScore > bestScore) {
+                bestScore = finalScore;
+                bestEncoding = encoding;
+              }
+            } catch (error) {
+              console.log(`⚠️ ${encoding} 인코딩 실패:`, error.message);
+            }
+          }
+          
+          console.log(`✅ 최적 인코딩 선택: ${bestEncoding} (점수: ${bestScore})`);
+          csvData = iconv.decode(fileBuffer, bestEncoding);
+        }
+      } catch (error) {
+        console.error('❌ 인코딩 감지 실패, UTF-8로 처리:', error);
+        csvData = fileBuffer.toString('utf8');
+      }
+      
       const lines = csvData.split('\n').filter(line => line.trim());
       
       if (lines.length > 0) {
-        headers = lines[0].split(',').map(h => h.trim());
-        previewData = lines.slice(1, 21).map(line => {
-          const values = line.split(',').map(v => v.trim());
+        // 개선된 CSV 파싱 함수
+        function parseCSVLine(line) {
+          const result = [];
+          let current = '';
+          let inQuotes = false;
+          let i = 0;
+          
+          while (i < line.length) {
+            const char = line[i];
+            const nextChar = line[i + 1];
+            
+            if (char === '"') {
+              if (inQuotes && nextChar === '"') {
+                // 연속된 따옴표는 하나의 따옴표로 처리
+                current += '"';
+                i += 2;
+                continue;
+              } else {
+                // 따옴표 시작/끝
+                inQuotes = !inQuotes;
+              }
+            } else if (char === ',' && !inQuotes) {
+              // 따옴표 밖의 쉼표는 구분자
+              result.push(current.trim());
+              current = '';
+            } else {
+              current += char;
+            }
+            i++;
+          }
+          
+          // 마지막 필드 추가
+          result.push(current.trim());
+          return result;
+        }
+        
+        // 헤더 파싱 및 빈 필드 제거
+        const rawHeaders = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+        
+        // 빈 헤더나 의미 없는 헤더 제거
+        const validHeaderIndices = [];
+        const cleanHeaders = [];
+        
+        rawHeaders.forEach((header, index) => {
+          // 유효한 헤더 조건: 비어있지 않고, 공백이 아니며, 의미 있는 텍스트
+          if (header && 
+              header.length > 0 && 
+              header !== 'undefined' && 
+              header !== 'null' && 
+              !header.match(/^[\s,]+$/)) {
+            validHeaderIndices.push(index);
+            cleanHeaders.push(header);
+          }
+        });
+        
+        headers = cleanHeaders;
+        console.log(`📋 헤더 정리: ${rawHeaders.length} → ${headers.length}개 (유효한 필드만)`);
+        
+        // 데이터 파싱 (상위 20행, 유효한 컬럼만)
+        const rawDataLines = lines.slice(1, 21);
+        previewData = [];
+        
+        rawDataLines.forEach((line, lineIndex) => {
+          const values = parseCSVLine(line);
           const rowData = {};
-          headers.forEach((header, index) => {
-            rowData[header] = values[index] || '';
+          let hasValidData = false;
+          
+          // 유효한 헤더 인덱스에 해당하는 데이터만 추출
+          validHeaderIndices.forEach((headerIndex, cleanIndex) => {
+            const header = headers[cleanIndex];
+            const value = values[headerIndex] ? values[headerIndex].replace(/^"|"$/g, '').trim() : '';
+            
+            rowData[header] = value;
+            
+            // 빈 값이 아니면 유효한 데이터가 있다고 표시
+            if (value && value.length > 0) {
+              hasValidData = true;
+            }
           });
-          return rowData;
+          
+          // 유효한 데이터가 있는 행만 추가
+          if (hasValidData) {
+            previewData.push(rowData);
+          } else {
+            console.log(`⚠️ 빈 행 제외 (행 ${lineIndex + 2}): 유효한 데이터 없음`);
+          }
+        });
+        
+        console.log('✅ CSV 파싱 완료:', {
+          원본헤더: rawHeaders.length,
+          정리된헤더: headers.length,
+          원본행수: rawDataLines.length,
+          유효행수: previewData.length,
+          샘플헤더: headers.slice(0, 5),
+          샘플데이터: previewData.slice(0, 2)
         });
       }
     } else {

@@ -409,6 +409,55 @@ async function processFile(file, type) {
             return;
         }
         
+        // 🔄 새 파일 업로드 시 해당 파일 타입만 초기화
+        console.log(`🔄 ${type} 파일 업로드로 인한 상태 초기화 시작`);
+        
+        // 해당 파일 타입의 이전 데이터만 초기화 (다른 파일은 유지)
+        if (type === 'order') {
+            currentOrderFileId = null;
+            orderFileHeaders = [];
+        } else {
+            currentSupplierFileId = null;
+            supplierFileHeaders = [];
+        }
+        
+        // 매핑 관련 상태만 초기화 (파일 변경 시 매핑 다시 설정 필요)
+        currentMapping = {};
+        sessionStorage.setItem('mappingSaved', 'false');
+        
+        // 직접 입력 모드 해제
+        window.isDirectInputMode = false;
+        window.directInputData = null;
+        
+        // UI 상태 초기화 - STEP 2, 3, 4 숨기기 (매핑을 다시 해야 하므로)
+        document.getElementById('step2').classList.add('hidden');
+        document.getElementById('step3').classList.add('hidden');
+        document.getElementById('step4').classList.add('hidden');
+        
+        // 매핑 관련 컨테이너 초기화
+        const sourceFields = document.getElementById('sourceFields');
+        const targetFields = document.getElementById('targetFields');
+        if (sourceFields) sourceFields.innerHTML = '';
+        if (targetFields) {
+            targetFields.querySelectorAll('.field-item').forEach(field => {
+                field.style.background = '';
+                field.style.color = '';
+                field.classList.remove('selected');
+                field.innerHTML = field.dataset.target;
+            });
+        }
+        
+        // 필수 필드 입력 폼 숨기기
+        const missingFieldsForm = document.getElementById('missingFieldsForm');
+        if (missingFieldsForm) {
+            missingFieldsForm.classList.add('hidden');
+        }
+        
+        // ⚠️ 다른 파일 타입의 업로드 결과는 유지 (삭제하지 않음)
+        // 각 파일은 독립적으로 관리되어야 함
+        
+        console.log(`✅ ${type} 파일 업로드로 인한 상태 초기화 완료 (다른 파일 타입 유지)`);
+        
         // 처리 상태 설정
         isProcessing = true;
         
@@ -471,17 +520,12 @@ async function processFile(file, type) {
             if (type === 'order') {
                 currentOrderFileId = result.fileId;
                 orderFileHeaders = result.headers;
-                
-                // 주문서가 업로드되었으므로 안내 메시지 제거
-                const orderAlert = document.getElementById('uploadAlertOrder');
-                if (orderAlert && orderAlert.innerHTML.includes('주문서를 업로드하거나')) {
-                    orderAlert.innerHTML = '';
-                }
             } else {
                 currentSupplierFileId = result.fileId;
                 supplierFileHeaders = result.headers;
             }
             
+            // 먼저 업로드 결과를 표시
             showUploadResult(result, type);
             
             // 발주서가 업로드되었을 때 다음 단계로 이동하는 조건 개선
@@ -4689,3 +4733,4 @@ async function checkAdminAccessForWebhook() {
         }
     }
 }
+
