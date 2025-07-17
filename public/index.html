@@ -183,7 +183,12 @@
         }
 
         .file-input {
-            display: none;
+            position: absolute;
+            opacity: 0;
+            width: 0.1px;
+            height: 0.1px;
+            z-index: -1;
+            overflow: hidden;
         }
 
         .btn {
@@ -1074,18 +1079,6 @@
             <div class="step hidden" id="step2">
                 <h3>STEP 2. 필드 매핑 설정</h3>
                 
-                <!-- 액션 버튼들 (제목 바로 아래로 이동) -->
-                <div style="text-align: center; margin: 20px 0; padding: 15px; background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 8px; border: 1px solid #dee2e6;">
-                    <button class="btn" onclick="aiAutoMapping()" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%); margin-right: 10px;">
-                        🤖 AI 자동 매핑
-                    </button>
-                    <button class="btn" onclick="saveMapping()">매핑 저장</button>
-                    <button class="btn btn-success" onclick="generateOrder()" disabled style="opacity: 0.5; cursor: not-allowed;">발주서 생성</button>
-                    <button class="btn" onclick="restartProcess()" style="background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%); margin-left: 10px;">
-                        다시 시작
-                    </button>
-                </div>
-                
                 <p>주문서의 컬럼을 발주서 양식의 컬럼과 연결하세요.</p>
                 
                 <!-- 기능 안내 -->
@@ -1109,6 +1102,24 @@
                         <div id="targetFields">
                             <!-- 발주서 필드들이 동적으로 추가됩니다 -->
                         </div>
+                    </div>
+                </div>
+                
+                <!-- 액션 버튼들 (매핑 영역 아래에 배치) -->
+                <div style="text-align: center; margin: 30px 0 20px 0; padding: 20px; background: linear-gradient(145deg, #f8f9fa 0%, #e9ecef 100%); border-radius: 12px; border: 1px solid #dee2e6; box-shadow: 0 4px 12px rgba(0,0,0,0.1);">
+                    <div style="display: flex; flex-wrap: wrap; justify-content: center; gap: 15px; align-items: center;">
+                        <button class="btn" onclick="aiAutoMapping()" style="background: linear-gradient(135deg, #6f42c1 0%, #5a32a3 100%); color: white; padding: 12px 20px; border-radius: 8px; font-weight: 600; box-shadow: 0 3px 8px rgba(111, 66, 193, 0.3);">
+                            🤖 AI 자동 매핑
+                        </button>
+                        <button class="btn" onclick="saveMapping()" style="background: linear-gradient(135deg, #28a745 0%, #20c997 100%); color: white; padding: 12px 20px; border-radius: 8px; font-weight: 600; box-shadow: 0 3px 8px rgba(40, 167, 69, 0.3);">
+                            💾 매핑 저장
+                        </button>
+                        <button class="btn btn-success" onclick="generateOrder()" disabled style="opacity: 0.5; cursor: not-allowed; background: linear-gradient(135deg, #007bff 0%, #0056b3 100%); color: white; padding: 12px 20px; border-radius: 8px; font-weight: 600;">
+                            📋 발주서 생성
+                        </button>
+                        <button class="btn" onclick="restartProcess()" style="background: linear-gradient(135deg, #fd7e14 0%, #e55a00 100%); color: white; padding: 12px 20px; border-radius: 8px; font-weight: 600; box-shadow: 0 3px 8px rgba(253, 126, 20, 0.3);">
+                            🔄 다시 시작
+                        </button>
                     </div>
                 </div>
                 

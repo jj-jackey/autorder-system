@@ -549,9 +549,14 @@ router.post('/upload', upload.single('orderFile'), async (req, res) => {
           workbook.created = new Date();
           workbook.modified = new Date();
           
-          // fallback도 타임아웃 적용 (10초)
+          // fallback도 타임아웃 적용 (10초) - 안전한 로딩 옵션 포함
           await Promise.race([
-            workbook.xlsx.load(fileBuffer),
+            workbook.xlsx.load(fileBuffer, { 
+              ignoreCalculatedFields: true,
+              styles: false,
+              hyperlinks: false,
+              drawings: false 
+            }),
             new Promise((_, reject) => 
               setTimeout(() => reject(new Error('Fallback 처리 시간 초과 (10초)')), 10000)
             )
@@ -1302,111 +1307,362 @@ router.post('/generate-with-template', async (req, res) => {
     console.log('✅ 템플릿 정보 로드:', template.template_name);
     
     // 2. 주문서 파일 다운로드 및 데이터 읽기 (모든 환경에서 Supabase Storage 사용)
-    console.log('📥 Supabase Storage에서 파일 다운로드 중:', fileId);
+    console.log('📥 Supabase Storage에서 주문서 파일 다운로드 중:', fileId);
+    
+    // 안전 검증: supplier 파일인지 확인
+    if (fileId.includes('supplierFile')) {
+      console.error('❌ 잘못된 파일 타입: supplier 파일이 주문서 파일로 전달됨');
+      return res.status(400).json({ 
+        error: '주문서 파일이 필요하지만 발주서 템플릿 파일이 전달되었습니다. 주문서 파일을 다시 업로드해주세요.',
+        details: `파일 ID: ${fileId}`
+      });
+    }
     
     const downloadResult = await downloadFile(fileId);
     if (!downloadResult.success) {
-      console.error('❌ 파일 다운로드 실패:', {
+      console.error('❌ 주문서 파일 다운로드 실패:', {
         fileId: fileId,
         error: downloadResult.error
       });
       return res.status(404).json({ 
-        error: '파일을 찾을 수 없습니다.',
-        details: downloadResult.error 
+        error: '주문서 파일을 찾을 수 없습니다.',
+        details: downloadResult.error,
+        suggestion: '주문서 파일을 다시 업로드한 후 시도해주세요.'
       });
     }
     
     const fileBuffer = downloadResult.data;
-    console.log('✅ 파일 다운로드 성공:', {
+    console.log('✅ 주문서 파일 다운로드 성공:', {
       fileId: fileId,
       bufferSize: fileBuffer.length
     });
     
-    // 3. 엑셀 데이터 읽기 (메타데이터 오류 방지)
-    const workbook = new ExcelJS.Workbook();
+    // 3. 파일 형식 확인 및 데이터 읽기
+    const fileExtension = path.extname(fileId).toLowerCase();
+    console.log('📄 파일 형식 확인:', { fileId, fileExtension });
     
-    // ExcelJS 메타데이터 기본값 설정 (company 오류 방지)
-    workbook.creator = 'AutoOrder System';
-    workbook.company = 'AutoOrder';
-    workbook.created = new Date();
-    workbook.modified = new Date();
+    let orderHeaders = [];
+    let orderData = [];
     
-    try {
-      await workbook.xlsx.load(fileBuffer);
-    } catch (loadError) {
-      console.error('❌ ExcelJS 로드 오류:', loadError);
-      // 메타데이터 오류인 경우 다시 시도
-      if (loadError.message.includes('company') || loadError.message.includes('properties')) {
-        console.log('🔄 메타데이터 무시하고 재시도...');
-        const newWorkbook = new ExcelJS.Workbook();
-        // 메타데이터 처리 비활성화
-        await newWorkbook.xlsx.load(fileBuffer, { ignoreCalculatedFields: true });
-        workbook.worksheets = newWorkbook.worksheets;
-      } else {
-        throw loadError;
+    if (fileExtension === '.csv') {
+      // 3-1. CSV 파일 처리
+      console.log('📊 CSV 파일 처리 시작...');
+      
+      // 인코딩 자동 감지 및 변환
+      let csvData;
+      try {
+        // BOM 확인
+        const hasBom = fileBuffer.length >= 3 && 
+                      fileBuffer[0] === 0xEF && 
+                      fileBuffer[1] === 0xBB && 
+                      fileBuffer[2] === 0xBF;
+        
+        if (hasBom) {
+          // UTF-8 BOM이 있는 경우
+          console.log('📄 UTF-8 BOM 감지됨');
+          csvData = fileBuffer.slice(3).toString('utf8');
+        } else {
+          // 여러 인코딩으로 시도
+          const encodings = ['utf8', 'euc-kr', 'cp949'];
+          let bestEncoding = 'utf8';
+          let bestScore = 0;
+          
+          for (const encoding of encodings) {
+            try {
+              const testData = iconv.decode(fileBuffer, encoding);
+              
+              // 한글 문자가 제대로 디코딩되었는지 확인
+              const koreanScore = (testData.match(/[가-힣]/g) || []).length;
+              const invalidScore = (testData.match(/[�]/g) || []).length;
+              const finalScore = koreanScore - (invalidScore * 10); // 깨진 문자에 패널티
+              
+              console.log(`📊 ${encoding} 인코딩 점수: ${finalScore} (한글: ${koreanScore}, 깨짐: ${invalidScore})`);
+              
+              if (finalScore > bestScore) {
+                bestScore = finalScore;
+                bestEncoding = encoding;
+              }
+            } catch (error) {
+              console.log(`⚠️ ${encoding} 인코딩 실패:`, error.message);
+            }
+          }
+          
+          console.log(`✅ 최적 인코딩 선택: ${bestEncoding} (점수: ${bestScore})`);
+          csvData = iconv.decode(fileBuffer, bestEncoding);
+        }
+      } catch (error) {
+        console.error('❌ 인코딩 감지 실패, UTF-8로 처리:', error);
+        csvData = fileBuffer.toString('utf8');
+      }
+      
+      const lines = csvData.split('\n').filter(line => line.trim());
+      
+      if (lines.length === 0) {
+        return res.status(400).json({ 
+          error: 'CSV 파일에 데이터가 없습니다.' 
+        });
+      }
+      
+      // CSV 파싱 함수
+      function parseCSVLine(line) {
+        const result = [];
+        let current = '';
+        let inQuotes = false;
+        let i = 0;
+        
+        while (i < line.length) {
+          const char = line[i];
+          const nextChar = line[i + 1];
+          
+          if (char === '"') {
+            if (inQuotes && nextChar === '"') {
+              // 연속된 따옴표는 하나의 따옴표로 처리
+              current += '"';
+              i += 2;
+              continue;
+            } else {
+              // 따옴표 시작/끝
+              inQuotes = !inQuotes;
+            }
+          } else if (char === ',' && !inQuotes) {
+            // 따옴표 밖의 쉼표는 구분자
+            result.push(current.trim());
+            current = '';
+          } else {
+            current += char;
+          }
+          i++;
+        }
+        
+        // 마지막 필드 추가
+        result.push(current.trim());
+        return result;
+      }
+      
+      // 헤더 파싱
+      const rawHeaders = parseCSVLine(lines[0]).map(h => h.replace(/^"|"$/g, '').trim());
+      
+      // 유효한 헤더 필터링
+      const validHeaderIndices = [];
+      rawHeaders.forEach((header, index) => {
+        if (header && 
+            header.length > 0 && 
+            header !== 'undefined' && 
+            header !== 'null' && 
+            !header.match(/^[\s,]+$/)) {
+          validHeaderIndices.push(index);
+          orderHeaders.push(header);
+        }
+      });
+      
+      console.log(`📋 CSV 헤더 정리: ${rawHeaders.length} → ${orderHeaders.length}개`);
+      
+      // 데이터 파싱
+      const rawDataLines = lines.slice(1);
+      rawDataLines.forEach((line, lineIndex) => {
+        const values = parseCSVLine(line);
+        const rowData = [];
+        let hasValidData = false;
+        
+        // 유효한 헤더 인덱스에 해당하는 데이터만 추출
+        validHeaderIndices.forEach((headerIndex) => {
+          const value = values[headerIndex] ? values[headerIndex].replace(/^"|"$/g, '').trim() : '';
+          rowData.push(value);
+          
+          if (value && value.length > 0) {
+            hasValidData = true;
+          }
+        });
+        
+        // 유효한 데이터가 있는 행만 추가
+        if (hasValidData) {
+          orderData.push(rowData);
+        }
+      });
+      
+      console.log('✅ CSV 파싱 완료:', {
+        헤더: orderHeaders.length,
+        데이터행: orderData.length
+      });
+      
+    } else {
+      // 3-2. Excel 파일 처리 (메타데이터 오류 방지)
+      console.log('📊 Excel 파일 처리 시작...');
+      
+      let skipExcelProcessing = false;
+      
+      const workbook = new ExcelJS.Workbook();
+      
+      // ExcelJS 메타데이터 기본값 설정 (company 오류 방지)
+      workbook.creator = 'AutoOrder System';
+      workbook.company = 'AutoOrder';
+      workbook.created = new Date();
+      workbook.modified = new Date();
+      
+      try {
+        // 첫 번째 시도: 기본 로딩 (안전한 옵션 포함)
+        await workbook.xlsx.load(fileBuffer, { 
+          ignoreCalculatedFields: true,
+          styles: false,
+          hyperlinks: false 
+        });
+      } catch (loadError) {
+        console.error('❌ ExcelJS 로드 오류:', loadError);
+        
+        try {
+          // 두 번째 시도: 완전히 새로운 워크북으로 재시도
+          console.log('🔄 새 워크북으로 재시도...');
+          const safeWorkbook = new ExcelJS.Workbook();
+          
+          // 안전한 메타데이터 설정
+          Object.defineProperty(safeWorkbook, 'creator', { value: 'AutoOrder System', writable: true });
+          Object.defineProperty(safeWorkbook, 'company', { value: 'AutoOrder', writable: true });
+          Object.defineProperty(safeWorkbook, 'created', { value: new Date(), writable: true });
+          Object.defineProperty(safeWorkbook, 'modified', { value: new Date(), writable: true });
+          
+          // 최소 옵션으로 로딩
+          await safeWorkbook.xlsx.load(fileBuffer, { 
+            ignoreCalculatedFields: true,
+            styles: false,
+            hyperlinks: false,
+            drawings: false,
+            worksheetReader: false
+          });
+          
+          // 워크시트 복사
+          workbook.worksheets = safeWorkbook.worksheets;
+          console.log('✅ 재시도 성공');
+          
+        } catch (retryError) {
+          console.error('❌ 재시도도 실패:', retryError);
+          
+          // 세 번째 시도: 임시 파일로 저장 후 다시 읽기
+          try {
+            console.log('🔄 임시 파일 방식으로 재시도...');
+            const tempDir = process.env.NODE_ENV === 'production' ? '/tmp' : path.join(__dirname, '../uploads');
+            const tempFileName = `temp_safe_${Date.now()}.xlsx`;
+            const tempFilePath = path.join(tempDir, tempFileName);
+            
+            // 파일 저장
+            fs.writeFileSync(tempFilePath, fileBuffer);
+            
+            // 새로운 방식으로 읽기
+            const { readExcelFile } = require('../utils/converter');
+            const excelData = await readExcelFile(tempFilePath);
+            
+            // 임시 파일 삭제
+            if (fs.existsSync(tempFilePath)) {
+              fs.unlinkSync(tempFilePath);
+            }
+            
+            // 성공 시 데이터 변환
+            const rawData = [];
+            rawData.push(excelData.headers);
+            excelData.data.forEach(row => {
+              const rowArray = excelData.headers.map(header => row[header] || '');
+              rawData.push(rowArray);
+            });
+            
+            orderHeaders = rawData[0];
+            orderData = rawData.slice(1).filter(row => row.some(cell => cell));
+            
+            console.log('✅ 임시 파일 방식으로 성공:', {
+              헤더: orderHeaders.length,
+              데이터행: orderData.length
+            });
+            
+            // Excel 처리 완료로 스킵
+            skipExcelProcessing = true;
+            
+          } catch (tempError) {
+            console.error('❌ 임시 파일 방식도 실패:', tempError);
+            
+            // supplier 파일 오류인 경우 특별 처리
+            if (fileId.includes('supplierFile')) {
+              throw new Error(`발주서 템플릿 파일이 손상되었습니다. 템플릿을 다시 생성해주세요.\n\n1. 새 주문서 파일 업로드\n2. 수동 매핑으로 새 템플릿 생성\n3. 기존 템플릿 이름으로 저장하여 덮어쓰기`);
+            } else {
+              throw new Error(`Excel 파일 처리 실패: 모든 방법을 시도했지만 실패했습니다. CSV 형식으로 변환해서 다시 업로드해주세요.`);
+            }
+          }
+        }
+      }
+      
+      // Excel 처리가 완료되지 않은 경우에만 워크시트 처리
+      if (!skipExcelProcessing) {
+        const worksheet = workbook.getWorksheet(1);
+        
+        if (!worksheet) {
+          return res.status(400).json({ 
+            error: '워크시트를 찾을 수 없습니다.' 
+          });
+        }
+        
+        // 헤더와 데이터 추출
+        const rawData = [];
+        worksheet.eachRow((row, rowNumber) => {
+          const rowData = [];
+          row.eachCell((cell, colNumber) => {
+            // ⚠️ CRITICAL: cell.value를 직접 수정하지 말고 복사해서 처리
+            const originalValue = cell.value;
+            let processedValue = originalValue;
+            
+            // 객체를 문자열로 변환 (ExcelJS 특수 타입 처리)
+            if (processedValue && typeof processedValue === 'object') {
+              // ExcelJS 특수 타입 처리
+              if (processedValue.richText && Array.isArray(processedValue.richText)) {
+                // 리치 텍스트 배열에서 text 속성만 추출
+                processedValue = processedValue.richText.map(item => item.text || '').join('');
+              } else if (processedValue.text !== undefined) {
+                // 하이퍼링크 또는 단순 텍스트
+                processedValue = processedValue.text;
+              } else if (processedValue.result !== undefined) {
+                // 수식 결과
+                processedValue = processedValue.result;
+              } else if (processedValue.valueOf && typeof processedValue.valueOf === 'function') {
+                // 날짜 또는 숫자 객체
+                processedValue = processedValue.valueOf();
+              } else if (Array.isArray(processedValue)) {
+                processedValue = processedValue.join(', ');
+              } else if (processedValue.toString && typeof processedValue.toString === 'function') {
+                const toStringResult = processedValue.toString();
+                if (toStringResult !== '[object Object]') {
+                  processedValue = toStringResult;
+                } else {
+                  processedValue = JSON.stringify(processedValue);
+                }
+              } else {
+                processedValue = JSON.stringify(processedValue);
+              }
+            }
+            
+            const finalValue = processedValue ? String(processedValue).trim() : '';
+            rowData.push(finalValue);
+          });
+          rawData.push(rowData);
+        });
+        
+        if (rawData.length === 0) {
+          return res.status(400).json({ 
+            error: '파일에 데이터가 없습니다.' 
+          });
+        }
+        
+        orderHeaders = rawData[0];
+        orderData = rawData.slice(1).filter(row => row.some(cell => cell));
+        
+        console.log('✅ Excel 파싱 완료:', {
+          헤더: orderHeaders.length,
+          데이터행: orderData.length
+        });
       }
     }
     
-    const worksheet = workbook.getWorksheet(1);
-    
-    if (!worksheet) {
+    // 4. 데이터 검증
+    if (orderData.length === 0) {
       return res.status(400).json({ 
-        error: '워크시트를 찾을 수 없습니다.' 
+        error: '처리할 데이터가 없습니다.' 
       });
     }
-    
-    // 4. 헤더와 데이터 추출
-    const rawData = [];
-    worksheet.eachRow((row, rowNumber) => {
-      const rowData = [];
-      row.eachCell((cell, colNumber) => {
-        // ⚠️ CRITICAL: cell.value를 직접 수정하지 말고 복사해서 처리
-        const originalValue = cell.value;
-        let processedValue = originalValue;
-        
-        // 객체를 문자열로 변환 (ExcelJS 특수 타입 처리)
-        if (processedValue && typeof processedValue === 'object') {
-          // ExcelJS 특수 타입 처리
-          if (processedValue.richText && Array.isArray(processedValue.richText)) {
-            // 리치 텍스트 배열에서 text 속성만 추출
-            processedValue = processedValue.richText.map(item => item.text || '').join('');
-          } else if (processedValue.text !== undefined) {
-            // 하이퍼링크 또는 단순 텍스트
-            processedValue = processedValue.text;
-          } else if (processedValue.result !== undefined) {
-            // 수식 결과
-            processedValue = processedValue.result;
-          } else if (processedValue.valueOf && typeof processedValue.valueOf === 'function') {
-            // 날짜 또는 숫자 객체
-            processedValue = processedValue.valueOf();
-          } else if (Array.isArray(processedValue)) {
-            processedValue = processedValue.join(', ');
-          } else if (processedValue.toString && typeof processedValue.toString === 'function') {
-            const toStringResult = processedValue.toString();
-            if (toStringResult !== '[object Object]') {
-              processedValue = toStringResult;
-            } else {
-              processedValue = JSON.stringify(processedValue);
-            }
-          } else {
-            processedValue = JSON.stringify(processedValue);
-          }
-        }
-        
-        const finalValue = processedValue ? String(processedValue).trim() : '';
-        rowData.push(finalValue);
-      });
-      rawData.push(rowData);
-    });
-    
-    if (rawData.length === 0) {
-      return res.status(400).json({ 
-        error: '파일에 데이터가 없습니다.' 
-      });
-    }
-    
-    const orderHeaders = rawData[0];
-    const orderData = rawData.slice(1).filter(row => row.some(cell => cell));
     
     console.log('📊 주문서 데이터:', {
       headers: orderHeaders,
@@ -1442,6 +1698,8 @@ router.post('/generate-with-template', async (req, res) => {
     // 6. 변환된 데이터 생성
     const convertedData = [];
     const supplierHeaders = Object.keys(supplierMapping);
+    
+    console.log('📋 발주서 헤더 생성:', supplierHeaders);
     
     // 헤더 추가
     convertedData.push(supplierHeaders);

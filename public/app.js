@@ -116,50 +116,165 @@ document.addEventListener('DOMContentLoaded', async function() {
 
 // 앱 초기화
 function initializeApp() {
+    console.log('🔧 앱 초기화 시작...');
+    
+    setupFileUploadEvents();
+    
+    console.log('✅ 앱 초기화 완료');
+}
+
+// 파일 업로드 이벤트 설정
+function setupFileUploadEvents() {
+    // 주문서 파일 업로드
     const uploadAreaOrder = document.getElementById('uploadAreaOrder');
-    const uploadAreaSupplier = document.getElementById('uploadAreaSupplier');
     const fileInputOrder = document.getElementById('fileInputOrder');
-    const fileInputSupplier = document.getElementById('fileInputSupplier');
     
-    // 기존 이벤트 리스너 제거
-    if (uploadAreaOrder) {
-        uploadAreaOrder.removeEventListener('click', () => fileInputOrder.click());
-        uploadAreaOrder.removeEventListener('dragover', handleDragOver);
-        uploadAreaOrder.removeEventListener('dragleave', handleDragLeave);
-        uploadAreaOrder.removeEventListener('drop', (e) => handleDrop(e, 'order'));
-    }
-    
-    if (fileInputOrder) {
-        fileInputOrder.removeEventListener('change', (e) => handleFileSelect(e, 'order'));
-    }
-    
-    if (uploadAreaSupplier) {
-        uploadAreaSupplier.removeEventListener('click', () => fileInputSupplier.click());
-        uploadAreaSupplier.removeEventListener('dragover', handleDragOver);
-        uploadAreaSupplier.removeEventListener('dragleave', handleDragLeave);
-        uploadAreaSupplier.removeEventListener('drop', (e) => handleDrop(e, 'supplier'));
-    }
-    
-    if (fileInputSupplier) {
-        fileInputSupplier.removeEventListener('change', (e) => handleFileSelect(e, 'supplier'));
-    }
-    
-    // 주문서 파일 업로드 이벤트
     if (uploadAreaOrder && fileInputOrder) {
-        uploadAreaOrder.addEventListener('click', () => fileInputOrder.click());
+        // 기존 이벤트 리스너 정리 (중복 방지)
+        uploadAreaOrder.onclick = null;
+        uploadAreaOrder.ondragover = null;
+        uploadAreaOrder.ondragleave = null;
+        uploadAreaOrder.ondrop = null;
+        fileInputOrder.onchange = null;
+        
+        // 새로운 클릭 핸들러 생성 (한 번만 실행되도록)
+        const clickHandlerOrder = function(e) {
+            // 이미 처리 중이면 무시
+            if (isProcessing) {
+                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
+                return;
+            }
+            
+            console.log('📁 주문서 업로드 영역 클릭됨');
+            console.log('📋 fileInputOrder 요소:', fileInputOrder);
+            console.log('📋 fileInputOrder 속성:', {
+                type: fileInputOrder.type,
+                accept: fileInputOrder.accept,
+                disabled: fileInputOrder.disabled,
+                display: fileInputOrder.style.display,
+                visibility: fileInputOrder.style.visibility,
+                position: fileInputOrder.style.position
+            });
+            
+            try {
+                console.log('🔄 fileInputOrder.click() 호출 시도...');
+                
+                // 방법 1: 임시로 보이게 만들고 클릭
+                const originalStyle = {
+                    position: fileInputOrder.style.position,
+                    opacity: fileInputOrder.style.opacity,
+                    zIndex: fileInputOrder.style.zIndex
+                };
+                
+                // 임시로 보이게 설정
+                fileInputOrder.style.position = 'static';
+                fileInputOrder.style.opacity = '1';
+                fileInputOrder.style.zIndex = '9999';
+                
+                // 클릭 시도
+                fileInputOrder.click();
+                console.log('✅ fileInputOrder.click() 호출 완료');
+                
+                // 즉시 다시 숨기기
+                setTimeout(() => {
+                    fileInputOrder.style.position = originalStyle.position || '';
+                    fileInputOrder.style.opacity = originalStyle.opacity || '';
+                    fileInputOrder.style.zIndex = originalStyle.zIndex || '';
+                }, 10);
+                
+            } catch (error) {
+                console.error('❌ fileInputOrder.click() 오류:', error);
+            }
+        };
+        
+        // 파일 선택 핸들러 생성 (한 번만 실행되도록)
+        const changeHandlerOrder = function(e) {
+            console.log('📁 주문서 파일 선택 이벤트 발생');
+            handleFileSelect(e, 'order');
+        };
+        
+        // 이벤트 리스너 등록
+        uploadAreaOrder.onclick = clickHandlerOrder;
         uploadAreaOrder.addEventListener('dragover', handleDragOver);
         uploadAreaOrder.addEventListener('dragleave', handleDragLeave);
         uploadAreaOrder.addEventListener('drop', (e) => handleDrop(e, 'order'));
-        fileInputOrder.addEventListener('change', (e) => handleFileSelect(e, 'order'));
+        fileInputOrder.onchange = changeHandlerOrder;
+        
+        console.log('✅ 주문서 파일 업로드 이벤트 설정 완료');
+    } else {
+        console.error('❌ 주문서 업로드 요소를 찾을 수 없습니다:', { uploadAreaOrder, fileInputOrder });
     }
     
-    // 발주서 파일 업로드 이벤트
+    // 발주서 파일 업로드
+    const uploadAreaSupplier = document.getElementById('uploadAreaSupplier');
+    const fileInputSupplier = document.getElementById('fileInputSupplier');
+    
     if (uploadAreaSupplier && fileInputSupplier) {
-        uploadAreaSupplier.addEventListener('click', () => fileInputSupplier.click());
+        // 기존 이벤트 리스너 정리 (중복 방지)
+        uploadAreaSupplier.onclick = null;
+        uploadAreaSupplier.ondragover = null;
+        uploadAreaSupplier.ondragleave = null;
+        uploadAreaSupplier.ondrop = null;
+        fileInputSupplier.onchange = null;
+        
+        // 새로운 클릭 핸들러 생성 (한 번만 실행되도록)
+        const clickHandlerSupplier = function(e) {
+            // 이미 처리 중이면 무시
+            if (isProcessing) {
+                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
+                return;
+            }
+            
+            console.log('📁 발주서 업로드 영역 클릭됨');
+            console.log('📋 fileInputSupplier 요소:', fileInputSupplier);
+            
+            try {
+                console.log('🔄 fileInputSupplier.click() 호출 시도...');
+                
+                // 임시로 보이게 만들고 클릭 (브라우저 보안 정책 우회)
+                const originalStyle = {
+                    position: fileInputSupplier.style.position,
+                    opacity: fileInputSupplier.style.opacity,
+                    zIndex: fileInputSupplier.style.zIndex
+                };
+                
+                // 임시로 보이게 설정
+                fileInputSupplier.style.position = 'static';
+                fileInputSupplier.style.opacity = '1';
+                fileInputSupplier.style.zIndex = '9999';
+                
+                // 클릭 시도
+                fileInputSupplier.click();
+                console.log('✅ fileInputSupplier.click() 호출 완료');
+                
+                // 즉시 다시 숨기기
+                setTimeout(() => {
+                    fileInputSupplier.style.position = originalStyle.position || '';
+                    fileInputSupplier.style.opacity = originalStyle.opacity || '';
+                    fileInputSupplier.style.zIndex = originalStyle.zIndex || '';
+                }, 10);
+                
+            } catch (error) {
+                console.error('❌ fileInputSupplier.click() 오류:', error);
+            }
+        };
+        
+        // 파일 선택 핸들러 생성 (한 번만 실행되도록)
+        const changeHandlerSupplier = function(e) {
+            console.log('📁 발주서 파일 선택 이벤트 발생');
+            handleFileSelect(e, 'supplier');
+        };
+        
+        // 이벤트 리스너 등록
+        uploadAreaSupplier.onclick = clickHandlerSupplier;
         uploadAreaSupplier.addEventListener('dragover', handleDragOver);
         uploadAreaSupplier.addEventListener('dragleave', handleDragLeave);
         uploadAreaSupplier.addEventListener('drop', (e) => handleDrop(e, 'supplier'));
-        fileInputSupplier.addEventListener('change', (e) => handleFileSelect(e, 'supplier'));
+        fileInputSupplier.onchange = changeHandlerSupplier;
+        
+        console.log('✅ 발주서 파일 업로드 이벤트 설정 완료');
+    } else {
+        console.error('❌ 발주서 업로드 요소를 찾을 수 없습니다:', { uploadAreaSupplier, fileInputSupplier });
     }
     
     // 전송 옵션 변경 이벤트
@@ -218,7 +333,31 @@ function handleDrop(e, type) {
 function handleFileSelect(e, type) {
     const file = e.target.files[0];
     if (file) {
-        processFile(file, type);
+        console.log('📁 파일 선택됨:', {
+            fileName: file.name,
+            fileSize: file.size,
+            fileType: type,
+            timestamp: new Date().toISOString()
+        });
+        
+        // 중복 처리 방지
+        if (isProcessing) {
+            console.warn('⚠️ 이미 파일 처리 중입니다. 중복 요청 무시됨');
+            // input value 초기화
+            e.target.value = '';
+            return;
+        }
+        
+        // 파일 처리 시작 전에 input value 초기화 (브라우저 이슈 방지)
+        const inputValue = e.target.value;
+        e.target.value = '';
+        
+        processFile(file, type).then(() => {
+            console.log('✅ 파일 처리 완료, input 초기화됨');
+        }).catch((error) => {
+            console.error('❌ 파일 처리 오류:', error);
+            // 오류 발생 시에도 input 초기화
+        });
     }
 }
 
@@ -1800,14 +1939,35 @@ async function processTemplateMode() {
         
         // 템플릿 기반 자동 변환 API 호출
         const workPromise = (async () => {
+            console.log('🚀 템플릿 기반 변환 API 호출 준비:', {
+                currentOrderFileId: currentOrderFileId,
+                selectedTemplateId: selectedTemplate.id,
+                selectedTemplateName: selectedTemplate.name,
+                isOrderFile: currentOrderFileId && currentOrderFileId.includes('orderFile'),
+                isSupplierFile: currentOrderFileId && currentOrderFileId.includes('supplierFile')
+            });
+            
+            // 파일 ID 검증
+            if (!currentOrderFileId) {
+                throw new Error('주문서 파일이 업로드되지 않았습니다.');
+            }
+            
+            if (currentOrderFileId.includes('supplierFile')) {
+                throw new Error('잘못된 파일 타입입니다. 주문서 파일을 업로드해주세요.');
+            }
+            
+            const requestData = {
+                fileId: currentOrderFileId,
+                templateId: selectedTemplate.id,
+                templateType: 'standard'
+            };
+            
+            console.log('📤 API 요청 데이터:', requestData);
+            
             const response = await fetch('/api/orders/generate-with-template', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    fileId: currentOrderFileId,
-                    templateId: selectedTemplate.id,
-                    templateType: 'standard'
-                })
+                body: JSON.stringify(requestData)
             });
             
             return response.json();
@@ -3419,6 +3579,9 @@ function restartProcess() {
         // 모드 변경으로 UI 완전 초기화
         changeWorkMode('fileUpload');
         
+        // 파일 업로드 이벤트 재설정
+        setupFileUploadEvents();
+        
         // 첫 번째 스텝만 표시
         const step1 = document.getElementById('step1');
         if (step1) {
@@ -3759,22 +3922,81 @@ function setupSavedTemplateModeEvents() {
     const fileInputTemplateMode = document.getElementById('fileInputTemplateMode');
     
     if (uploadAreaTemplateMode && fileInputTemplateMode) {
-        // 기존 이벤트 리스너 완전 제거
+        console.log('🔧 템플릿 모드 이벤트 리스너 설정 중...');
+        
+        // 기존 이벤트 리스너 정리 (중복 방지)
         uploadAreaTemplateMode.onclick = null;
-        uploadAreaTemplateMode.removeEventListener('dragover', handleDragOver);
-        uploadAreaTemplateMode.removeEventListener('dragleave', handleDragLeave);
-        uploadAreaTemplateMode.removeEventListener('drop', handleDrop);
+        uploadAreaTemplateMode.ondragover = null;
+        uploadAreaTemplateMode.ondragleave = null;
+        uploadAreaTemplateMode.ondrop = null;
+        fileInputTemplateMode.onchange = null;
         
-        // 파일 입력의 기존 이벤트도 제거 (복제된 요소로 교체)
-        const newFileInput = fileInputTemplateMode.cloneNode(true);
-        fileInputTemplateMode.parentNode.replaceChild(newFileInput, fileInputTemplateMode);
+        // 새로운 클릭 핸들러 생성 (한 번만 실행되도록)
+        const clickHandler = function(e) {
+            // 이미 처리 중이면 무시
+            if (isProcessing) {
+                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
+                return;
+            }
+            
+            console.log('📁 템플릿 모드 업로드 영역 클릭됨');
+            console.log('📋 fileInputTemplateMode 요소:', fileInputTemplateMode);
+            console.log('📋 fileInputTemplateMode 속성:', {
+                type: fileInputTemplateMode.type,
+                accept: fileInputTemplateMode.accept,
+                disabled: fileInputTemplateMode.disabled,
+                display: fileInputTemplateMode.style.display,
+                visibility: fileInputTemplateMode.style.visibility,
+                position: fileInputTemplateMode.style.position
+            });
+            
+            try {
+                console.log('🔄 fileInputTemplateMode.click() 호출 시도...');
+                
+                // 임시로 보이게 만들고 클릭 (브라우저 보안 정책 우회)
+                const originalStyle = {
+                    position: fileInputTemplateMode.style.position,
+                    opacity: fileInputTemplateMode.style.opacity,
+                    zIndex: fileInputTemplateMode.style.zIndex
+                };
+                
+                // 임시로 보이게 설정
+                fileInputTemplateMode.style.position = 'static';
+                fileInputTemplateMode.style.opacity = '1';
+                fileInputTemplateMode.style.zIndex = '9999';
+                
+                // 클릭 시도
+                fileInputTemplateMode.click();
+                console.log('✅ fileInputTemplateMode.click() 호출 완료');
+                
+                // 즉시 다시 숨기기
+                setTimeout(() => {
+                    fileInputTemplateMode.style.position = originalStyle.position || '';
+                    fileInputTemplateMode.style.opacity = originalStyle.opacity || '';
+                    fileInputTemplateMode.style.zIndex = originalStyle.zIndex || '';
+                }, 10);
+                
+            } catch (error) {
+                console.error('❌ fileInputTemplateMode.click() 오류:', error);
+            }
+        };
         
-        // 새로운 이벤트 리스너 설정
-        uploadAreaTemplateMode.onclick = () => newFileInput.click();
+        // 파일 선택 핸들러 생성 (한 번만 실행되도록)
+        const changeHandler = function(e) {
+            console.log('📁 템플릿 모드 파일 선택 이벤트 발생');
+            handleFileSelect(e, 'template-mode');
+        };
+        
+        // 이벤트 리스너 등록
+        uploadAreaTemplateMode.onclick = clickHandler;
         uploadAreaTemplateMode.addEventListener('dragover', handleDragOver);
         uploadAreaTemplateMode.addEventListener('dragleave', handleDragLeave);
         uploadAreaTemplateMode.addEventListener('drop', (e) => handleDrop(e, 'template-mode'));
-        newFileInput.addEventListener('change', (e) => handleFileSelect(e, 'template-mode'));
+        fileInputTemplateMode.onchange = changeHandler;
+        
+        console.log('✅ 템플릿 모드 이벤트 리스너 설정 완료');
+    } else {
+        console.error('❌ 템플릿 모드 업로드 요소를 찾을 수 없습니다:', { uploadAreaTemplateMode, fileInputTemplateMode });
     }
 }
 
@@ -3784,12 +4006,73 @@ function setupDirectInputModeEvents() {
     const fileInputSupplierDirectMode = document.getElementById('fileInputSupplierDirectMode');
     
     if (uploadAreaSupplierDirectMode && fileInputSupplierDirectMode) {
-        // 기존 이벤트 리스너 제거 후 새로 추가
-        uploadAreaSupplierDirectMode.onclick = () => fileInputSupplierDirectMode.click();
+        console.log('🔧 직접 입력 모드 이벤트 리스너 설정 중...');
+        
+        // 기존 이벤트 리스너 정리 (중복 방지)
+        uploadAreaSupplierDirectMode.onclick = null;
+        uploadAreaSupplierDirectMode.ondragover = null;
+        uploadAreaSupplierDirectMode.ondragleave = null;
+        uploadAreaSupplierDirectMode.ondrop = null;
+        fileInputSupplierDirectMode.onchange = null;
+        
+        // 새로운 클릭 핸들러 생성 (한 번만 실행되도록)
+        const clickHandler = function(e) {
+            // 이미 처리 중이면 무시
+            if (isProcessing) {
+                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
+                return;
+            }
+            
+            console.log('📁 직접 입력 모드 업로드 영역 클릭됨');
+            console.log('📋 fileInputSupplierDirectMode 요소:', fileInputSupplierDirectMode);
+            
+            try {
+                console.log('🔄 fileInputSupplierDirectMode.click() 호출 시도...');
+                
+                // 임시로 보이게 만들고 클릭 (브라우저 보안 정책 우회)
+                const originalStyle = {
+                    position: fileInputSupplierDirectMode.style.position,
+                    opacity: fileInputSupplierDirectMode.style.opacity,
+                    zIndex: fileInputSupplierDirectMode.style.zIndex
+                };
+                
+                // 임시로 보이게 설정
+                fileInputSupplierDirectMode.style.position = 'static';
+                fileInputSupplierDirectMode.style.opacity = '1';
+                fileInputSupplierDirectMode.style.zIndex = '9999';
+                
+                // 클릭 시도
+                fileInputSupplierDirectMode.click();
+                console.log('✅ fileInputSupplierDirectMode.click() 호출 완료');
+                
+                // 즉시 다시 숨기기
+                setTimeout(() => {
+                    fileInputSupplierDirectMode.style.position = originalStyle.position || '';
+                    fileInputSupplierDirectMode.style.opacity = originalStyle.opacity || '';
+                    fileInputSupplierDirectMode.style.zIndex = originalStyle.zIndex || '';
+                }, 10);
+                
+            } catch (error) {
+                console.error('❌ fileInputSupplierDirectMode.click() 오류:', error);
+            }
+        };
+        
+        // 파일 선택 핸들러 생성 (한 번만 실행되도록)
+        const changeHandler = function(e) {
+            console.log('📁 직접 입력 모드 파일 선택 이벤트 발생');
+            handleFileSelect(e, 'supplier-direct');
+        };
+        
+        // 이벤트 리스너 등록
+        uploadAreaSupplierDirectMode.onclick = clickHandler;
         uploadAreaSupplierDirectMode.addEventListener('dragover', handleDragOver);
         uploadAreaSupplierDirectMode.addEventListener('dragleave', handleDragLeave);
         uploadAreaSupplierDirectMode.addEventListener('drop', (e) => handleDrop(e, 'supplier-direct'));
-        fileInputSupplierDirectMode.addEventListener('change', (e) => handleFileSelect(e, 'supplier-direct'));
+        fileInputSupplierDirectMode.onchange = changeHandler;
+        
+        console.log('✅ 직접 입력 모드 이벤트 리스너 설정 완료');
+    } else {
+        console.error('❌ 직접 입력 모드 업로드 요소를 찾을 수 없습니다:', { uploadAreaSupplierDirectMode, fileInputSupplierDirectMode });
     }
 }
 
@@ -4042,7 +4325,18 @@ async function processFileForMode(file, type) {
         
         const formData = new FormData();
         formData.append('orderFile', file);
-        formData.append('fileType', type.replace('-direct', '')); // supplier-direct -> supplier
+        
+        // 파일 타입 설정 (템플릿 모드는 주문서 파일)
+        let fileType;
+        if (type === 'template-mode') {
+            fileType = 'order'; // 템플릿 모드에서는 주문서 파일 업로드
+        } else if (type.includes('supplier')) {
+            fileType = 'supplier';
+        } else {
+            fileType = 'order';
+        }
+        
+        formData.append('fileType', fileType);
         
         const response = await fetch('/api/orders/upload', {
             method: 'POST',
@@ -4095,8 +4389,20 @@ async function processFileForMode(file, type) {
                 }
                 
             } else if (type === 'template-mode') {
+                console.log('📋 템플릿 모드 파일 업로드 완료:', {
+                    type: type,
+                    fileType: fileType,
+                    resultFileId: result.fileId,
+                    fileName: result.fileName
+                });
+                
                 currentOrderFileId = result.fileId;
                 orderFileHeaders = result.headers;
+                
+                console.log('✅ 템플릿 모드 변수 설정 완료:', {
+                    currentOrderFileId: currentOrderFileId,
+                    orderFileHeaders: orderFileHeaders.length
+                });
                 
                 const uploadResult = document.getElementById('uploadResultTemplateMode');
                 const uploadAlert = document.getElementById('uploadAlertTemplateMode');
