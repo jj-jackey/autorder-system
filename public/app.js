@@ -3725,6 +3725,33 @@ function getDefaultSupplierTemplate() {
     ];
 }
 
+// 🐛 오류 보고 창 열기
+function openErrorReport() {
+    try {
+        // 새 창으로 오류 보고 사이트 열기
+        const errorReportUrl = 'https://report-error-frontend.onrender.com/';
+        const newWindow = window.open(
+            errorReportUrl, 
+            'ErrorReport', 
+            'width=800,height=600,scrollbars=yes,resizable=yes,toolbar=no,menubar=no,location=no,status=no'
+        );
+        
+        // 새 창이 차단되었는지 확인
+        if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+            // 팝업이 차단된 경우 대체 방법 제공
+            showAlert('warning', '팝업이 차단되었습니다. 오류 신고 사이트로 직접 이동합니다.');
+            window.location.href = errorReportUrl;
+        } else {
+            // 새 창에 포커스
+            newWindow.focus();
+        }
+    } catch (error) {
+        console.error('오류 보고 창 열기 실패:', error);
+        showAlert('error', '오류 보고 사이트를 열 수 없습니다. 직접 이동합니다.');
+        window.location.href = 'https://report-error-frontend.onrender.com/';
+    }
+}
+
 // 📝 개선된 직접 입력 저장 함수
 async function saveDirectInputImproved() {
     // 필수 필드 검증
