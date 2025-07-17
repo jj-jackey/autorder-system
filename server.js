@@ -17,10 +17,12 @@ const isRender = process.env.RENDER === 'true';
 
 // 플랫폼별 설정
 const platform = isVercel ? 'vercel' : isRender ? 'render' : 'local';
-console.log(`🚀 플랫폼 감지: ${platform.toUpperCase()} 환경`);
+
+if (!isProduction) {
+  console.log(`플랫폼: ${platform.toUpperCase()}`);
+}
 
 if (isProduction) {
-  console.log(`🚀 Production 환경 - ${platform} 최적화 설정 적용`);
   
   // 플랫폼별 요청 타임아웃 설정
   const timeout = isVercel ? 30000 : 60000; // Vercel: 30초, Render: 60초
@@ -280,6 +282,8 @@ app.listen(PORT, async () => {
     // 글로벌 에이전트 설정
     https.globalAgent = keepAliveAgent;
     
-    console.log('⚡ Keep-alive 연결 설정 완료 (Render 최적화)');
+    if (!isProduction) {
+      console.log('Keep-alive 연결 설정 완료');
+    }
   }
 }); 

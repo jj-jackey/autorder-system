@@ -25,7 +25,6 @@ function decodeFileName(fileName) {
     
     // 디코딩 결과 검증
     if (decoded && decoded !== fileName && !/[�]/.test(decoded)) {
-      console.log('✅ 파일명 디코딩 성공:', { original: fileName, decoded: decoded });
       return decoded;
     }
     
@@ -33,17 +32,15 @@ function decodeFileName(fileName) {
     try {
       const uriDecoded = decodeURIComponent(fileName);
       if (uriDecoded !== fileName) {
-        console.log('✅ 파일명 URI 디코딩 성공:', { original: fileName, decoded: uriDecoded });
         return uriDecoded;
       }
     } catch (e) {
       // URI 디코딩 실패 시 무시
     }
     
-    console.log('⚠️ 파일명 디코딩 실패, 원본 사용:', fileName);
     return fileName;
   } catch (error) {
-    console.error('❌ 파일명 디코딩 오류:', error.message);
+    console.error('파일명 디코딩 오류:', error.message);
     return fileName;
   }
 }

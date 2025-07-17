@@ -12,6 +12,16 @@ let currentUploadController = null;
 let currentProcessingController = null;
 let isProcessing = false;
 
+// 개발 환경 체크 (프로덕션에서는 로그 최소화)
+const isDevelopment = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+
+// 디버그 로그 함수 (개발 환경에서만 출력)
+function debugLog(...args) {
+    if (isDevelopment) {
+        console.log(...args);
+    }
+}
+
 // XLS 파일을 CSV로 변환하는 함수
 async function convertXlsToCsv(xlsFile) {
     return new Promise((resolve, reject) => {
@@ -19,8 +29,6 @@ async function convertXlsToCsv(xlsFile) {
         
         reader.onload = function(e) {
             try {
-                console.log('📖 XLS 파일 읽기 시작...');
-                
                 // ArrayBuffer를 사용해서 XLS 파일 읽기
                 const data = new Uint8Array(e.target.result);
                 
@@ -33,8 +41,6 @@ async function convertXlsToCsv(xlsFile) {
                     sheetRows: 0, // 모든 행 읽기
                     bookType: 'xls' // XLS 형식으로 명시
                 });
-                
-                console.log('📋 워크북 읽기 성공, 시트 수:', workbook.SheetNames.length);
                 
                 // 첫 번째 시트 가져오기
                 const firstSheetName = workbook.SheetNames[0];
@@ -50,8 +56,6 @@ async function convertXlsToCsv(xlsFile) {
                     rawNumbers: false // 숫자도 문자열로 처리
                 });
                 
-                console.log('📄 CSV 변환 성공, 크기:', csvData.length, '바이트');
-                
                 // 변환된 CSV를 File 객체로 생성
                 const originalName = xlsFile.name;
                 const csvFileName = originalName.replace(/\.xls$/i, '.csv');
@@ -62,17 +66,10 @@ async function convertXlsToCsv(xlsFile) {
                     lastModified: new Date().getTime() 
                 });
                 
-                console.log('✅ XLS → CSV 변환 완료:', {
-                    원본파일: originalName,
-                    변환파일: csvFileName,
-                    원본크기: xlsFile.size,
-                    변환크기: csvFile.size
-                });
-                
                 resolve(csvFile);
                 
             } catch (error) {
-                console.error('❌ XLS → CSV 변환 실패:', error);
+                console.error('XLS 파일 변환 실패:', error);
                 reject(new Error(`XLS 파일 변환 실패: ${error.message}`));
             }
         };
@@ -141,24 +138,10 @@ function setupFileUploadEvents() {
         const clickHandlerOrder = function(e) {
             // 이미 처리 중이면 무시
             if (isProcessing) {
-                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
                 return;
             }
             
-            console.log('📁 주문서 업로드 영역 클릭됨');
-            console.log('📋 fileInputOrder 요소:', fileInputOrder);
-            console.log('📋 fileInputOrder 속성:', {
-                type: fileInputOrder.type,
-                accept: fileInputOrder.accept,
-                disabled: fileInputOrder.disabled,
-                display: fileInputOrder.style.display,
-                visibility: fileInputOrder.style.visibility,
-                position: fileInputOrder.style.position
-            });
-            
             try {
-                console.log('🔄 fileInputOrder.click() 호출 시도...');
-                
                 // 방법 1: 임시로 보이게 만들고 클릭
                 const originalStyle = {
                     position: fileInputOrder.style.position,
@@ -173,7 +156,6 @@ function setupFileUploadEvents() {
                 
                 // 클릭 시도
                 fileInputOrder.click();
-                console.log('✅ fileInputOrder.click() 호출 완료');
                 
                 // 즉시 다시 숨기기
                 setTimeout(() => {
@@ -183,13 +165,12 @@ function setupFileUploadEvents() {
                 }, 10);
                 
             } catch (error) {
-                console.error('❌ fileInputOrder.click() 오류:', error);
+                console.error('fileInputOrder.click() 오류:', error);
             }
         };
         
         // 파일 선택 핸들러 생성 (한 번만 실행되도록)
         const changeHandlerOrder = function(e) {
-            console.log('📁 주문서 파일 선택 이벤트 발생');
             handleFileSelect(e, 'order');
         };
         
@@ -200,9 +181,8 @@ function setupFileUploadEvents() {
         uploadAreaOrder.addEventListener('drop', (e) => handleDrop(e, 'order'));
         fileInputOrder.onchange = changeHandlerOrder;
         
-        console.log('✅ 주문서 파일 업로드 이벤트 설정 완료');
     } else {
-        console.error('❌ 주문서 업로드 요소를 찾을 수 없습니다:', { uploadAreaOrder, fileInputOrder });
+        console.error('주문서 업로드 요소를 찾을 수 없습니다');
     }
     
     // 발주서 파일 업로드
@@ -221,16 +201,10 @@ function setupFileUploadEvents() {
         const clickHandlerSupplier = function(e) {
             // 이미 처리 중이면 무시
             if (isProcessing) {
-                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
                 return;
             }
             
-            console.log('📁 발주서 업로드 영역 클릭됨');
-            console.log('📋 fileInputSupplier 요소:', fileInputSupplier);
-            
             try {
-                console.log('🔄 fileInputSupplier.click() 호출 시도...');
-                
                 // 임시로 보이게 만들고 클릭 (브라우저 보안 정책 우회)
                 const originalStyle = {
                     position: fileInputSupplier.style.position,
@@ -245,7 +219,6 @@ function setupFileUploadEvents() {
                 
                 // 클릭 시도
                 fileInputSupplier.click();
-                console.log('✅ fileInputSupplier.click() 호출 완료');
                 
                 // 즉시 다시 숨기기
                 setTimeout(() => {
@@ -255,13 +228,12 @@ function setupFileUploadEvents() {
                 }, 10);
                 
             } catch (error) {
-                console.error('❌ fileInputSupplier.click() 오류:', error);
+                console.error('fileInputSupplier.click() 오류:', error);
             }
         };
         
         // 파일 선택 핸들러 생성 (한 번만 실행되도록)
         const changeHandlerSupplier = function(e) {
-            console.log('📁 발주서 파일 선택 이벤트 발생');
             handleFileSelect(e, 'supplier');
         };
         
@@ -272,9 +244,8 @@ function setupFileUploadEvents() {
         uploadAreaSupplier.addEventListener('drop', (e) => handleDrop(e, 'supplier'));
         fileInputSupplier.onchange = changeHandlerSupplier;
         
-        console.log('✅ 발주서 파일 업로드 이벤트 설정 완료');
     } else {
-        console.error('❌ 발주서 업로드 요소를 찾을 수 없습니다:', { uploadAreaSupplier, fileInputSupplier });
+        console.error('발주서 업로드 요소를 찾을 수 없습니다');
     }
     
     // 전송 옵션 변경 이벤트
@@ -333,16 +304,8 @@ function handleDrop(e, type) {
 function handleFileSelect(e, type) {
     const file = e.target.files[0];
     if (file) {
-        console.log('📁 파일 선택됨:', {
-            fileName: file.name,
-            fileSize: file.size,
-            fileType: type,
-            timestamp: new Date().toISOString()
-        });
-        
         // 중복 처리 방지
         if (isProcessing) {
-            console.warn('⚠️ 이미 파일 처리 중입니다. 중복 요청 무시됨');
             // input value 초기화
             e.target.value = '';
             return;
@@ -353,9 +316,9 @@ function handleFileSelect(e, type) {
         e.target.value = '';
         
         processFile(file, type).then(() => {
-            console.log('✅ 파일 처리 완료, input 초기화됨');
+            // 파일 처리 완료
         }).catch((error) => {
-            console.error('❌ 파일 처리 오류:', error);
+            console.error('파일 처리 오류:', error);
             // 오류 발생 시에도 input 초기화
         });
     }
@@ -369,8 +332,7 @@ async function checkIfBinaryXLS(file) {
             const arrayBuffer = e.target.result;
             const bytes = new Uint8Array(arrayBuffer);
             
-            console.log('🔍 Excel 파일 포맷 확인:', file.name);
-            console.log('📋 첫 16바이트:', Array.from(bytes.slice(0, 16)).map(b => b.toString(16).padStart(2, '0')).join(' '));
+
             
             // 1. ZIP 형식 확인 (OOXML, BIFF12 등)
             if (bytes.length >= 4) {
@@ -3922,8 +3884,6 @@ function setupSavedTemplateModeEvents() {
     const fileInputTemplateMode = document.getElementById('fileInputTemplateMode');
     
     if (uploadAreaTemplateMode && fileInputTemplateMode) {
-        console.log('🔧 템플릿 모드 이벤트 리스너 설정 중...');
-        
         // 기존 이벤트 리스너 정리 (중복 방지)
         uploadAreaTemplateMode.onclick = null;
         uploadAreaTemplateMode.ondragover = null;
@@ -3935,24 +3895,10 @@ function setupSavedTemplateModeEvents() {
         const clickHandler = function(e) {
             // 이미 처리 중이면 무시
             if (isProcessing) {
-                console.warn('⚠️ 파일 처리 중입니다. 클릭 무시됨');
                 return;
             }
             
-            console.log('📁 템플릿 모드 업로드 영역 클릭됨');
-            console.log('📋 fileInputTemplateMode 요소:', fileInputTemplateMode);
-            console.log('📋 fileInputTemplateMode 속성:', {
-                type: fileInputTemplateMode.type,
-                accept: fileInputTemplateMode.accept,
-                disabled: fileInputTemplateMode.disabled,
-                display: fileInputTemplateMode.style.display,
-                visibility: fileInputTemplateMode.style.visibility,
-                position: fileInputTemplateMode.style.position
-            });
-            
             try {
-                console.log('🔄 fileInputTemplateMode.click() 호출 시도...');
-                
                 // 임시로 보이게 만들고 클릭 (브라우저 보안 정책 우회)
                 const originalStyle = {
                     position: fileInputTemplateMode.style.position,
@@ -3967,7 +3913,6 @@ function setupSavedTemplateModeEvents() {
                 
                 // 클릭 시도
                 fileInputTemplateMode.click();
-                console.log('✅ fileInputTemplateMode.click() 호출 완료');
                 
                 // 즉시 다시 숨기기
                 setTimeout(() => {
@@ -3977,13 +3922,12 @@ function setupSavedTemplateModeEvents() {
                 }, 10);
                 
             } catch (error) {
-                console.error('❌ fileInputTemplateMode.click() 오류:', error);
+                console.error('fileInputTemplateMode.click() 오류:', error);
             }
         };
         
         // 파일 선택 핸들러 생성 (한 번만 실행되도록)
         const changeHandler = function(e) {
-            console.log('📁 템플릿 모드 파일 선택 이벤트 발생');
             handleFileSelect(e, 'template-mode');
         };
         
@@ -3994,9 +3938,8 @@ function setupSavedTemplateModeEvents() {
         uploadAreaTemplateMode.addEventListener('drop', (e) => handleDrop(e, 'template-mode'));
         fileInputTemplateMode.onchange = changeHandler;
         
-        console.log('✅ 템플릿 모드 이벤트 리스너 설정 완료');
     } else {
-        console.error('❌ 템플릿 모드 업로드 요소를 찾을 수 없습니다:', { uploadAreaTemplateMode, fileInputTemplateMode });
+        console.error('템플릿 모드 업로드 요소를 찾을 수 없습니다');
     }
 }
 
@@ -4043,7 +3986,6 @@ function setupDirectInputModeEvents() {
                 
                 // 클릭 시도
                 fileInputSupplierDirectMode.click();
-                console.log('✅ fileInputSupplierDirectMode.click() 호출 완료');
                 
                 // 즉시 다시 숨기기
                 setTimeout(() => {
@@ -4053,13 +3995,12 @@ function setupDirectInputModeEvents() {
                 }, 10);
                 
             } catch (error) {
-                console.error('❌ fileInputSupplierDirectMode.click() 오류:', error);
+                console.error('fileInputSupplierDirectMode.click() 오류:', error);
             }
         };
         
         // 파일 선택 핸들러 생성 (한 번만 실행되도록)
         const changeHandler = function(e) {
-            console.log('📁 직접 입력 모드 파일 선택 이벤트 발생');
             handleFileSelect(e, 'supplier-direct');
         };
         
@@ -4070,9 +4011,8 @@ function setupDirectInputModeEvents() {
         uploadAreaSupplierDirectMode.addEventListener('drop', (e) => handleDrop(e, 'supplier-direct'));
         fileInputSupplierDirectMode.onchange = changeHandler;
         
-        console.log('✅ 직접 입력 모드 이벤트 리스너 설정 완료');
     } else {
-        console.error('❌ 직접 입력 모드 업로드 요소를 찾을 수 없습니다:', { uploadAreaSupplierDirectMode, fileInputSupplierDirectMode });
+        console.error('직접 입력 모드 업로드 요소를 찾을 수 없습니다');
     }
 }
 
