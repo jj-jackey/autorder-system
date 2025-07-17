@@ -3803,9 +3803,12 @@ async function processDirectInputWithDefaultTemplateImproved(inputData) {
         
         hideLoading();
         
-        showAlert('success', '기본 템플릿으로 필드 매핑이 완료되었습니다. GENERATE ORDER 버튼을 클릭하여 발주서를 생성하세요.');
+        // 매핑이 완료되었지만 아직 저장되지 않음
+        sessionStorage.setItem('mappingSaved', 'false');
         
-        // GENERATE ORDER 버튼 활성화
+        showAlert('success', '기본 템플릿으로 필드 매핑이 완료되었습니다. "매핑 저장" 버튼을 클릭한 후 발주서를 생성하세요.');
+        
+        // GENERATE ORDER 버튼 상태 업데이트 (비활성화됨)
         updateGenerateOrderButton();
         
     } catch (error) {
@@ -4175,11 +4178,11 @@ async function processDefaultTemplateMode() {
         // 자동 매핑 수행
         performAutoMatching();
         
-        // 매핑 저장됨으로 표시
-        sessionStorage.setItem('mappingSaved', 'true');
+        // 자동 매핑 완료 후 저장 필요 상태로 설정
+        sessionStorage.setItem('mappingSaved', 'false');
         updateGenerateOrderButton();
         
-        showAlert('success', '기본 템플릿으로 자동 매핑이 완료되었습니다! GENERATE ORDER 버튼을 클릭하여 발주서를 생성하세요.');
+        showAlert('success', '기본 템플릿으로 자동 매핑이 완료되었습니다! "매핑 저장" 버튼을 클릭한 후 발주서를 생성하세요.');
         
     } catch (error) {
         hideProgress();
@@ -4568,8 +4571,8 @@ function performAutoMatching() {
     console.log(`🎯 자동 매칭 완료: ${matchedCount}개 필드 매칭됨`);
     
     if (matchedCount > 0) {
-        // 매핑이 있으면 SAVE MAPPING 버튼 활성화를 위한 상태 업데이트
-        sessionStorage.setItem('mappingSaved', 'true');
+        // 자동 매핑은 완료되었지만 아직 저장되지 않음
+        sessionStorage.setItem('mappingSaved', 'false');
         updateGenerateOrderButton();
         
         console.log(`📋 ${matchedCount}개 필드가 자동으로 매칭되었습니다: ${matchedFields.map(m => m.source).join(', ')}`);
