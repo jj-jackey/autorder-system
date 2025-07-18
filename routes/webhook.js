@@ -205,18 +205,46 @@ function validateOrderData(data) {
         }
       }
     } else {
-      // 한글 필드명 형식 검증  
-      const requiredFields = [
-        '주문_번호',
-        '상품명', 
-        '주문자_이름'
-      ];
+      // 한글 필드명 형식 검증 (여러 형식 지원)
+      const hasUnderscoreFormat = data['주문_번호'] || data['상품명'] || data['주문자_이름'];
+      const hasNormalFormat = data['주문번호'] || data['상품명'] || data['주문자이름'];
       
-      requiredFields.forEach(field => {
-        if (!data[field]) {
-          errors.push(`${field}는 필수 필드입니다.`);
+      if (hasUnderscoreFormat) {
+        // 언더스코어 형식
+        const requiredFields = [
+          '주문_번호',
+          '상품명', 
+          '주문자_이름'
+        ];
+        
+        requiredFields.forEach(field => {
+          if (!data[field]) {
+            errors.push(`${field}는 필수 필드입니다.`);
+          }
+        });
+      } else if (hasNormalFormat) {
+        // 일반 형식 (템플릿 기반)
+        const requiredFields = [
+          '주문번호',
+          '상품명', 
+          '주문자이름'
+        ];
+        
+        requiredFields.forEach(field => {
+          if (!data[field]) {
+            errors.push(`${field}는 필수 필드입니다.`);
+          }
+        });
+      } else {
+        // 필수 필드 중 하나라도 있는지 확인
+        const hasAnyRequiredField = data['주문_번호'] || data['주문번호'] || 
+                                   data['상품명'] || 
+                                   data['주문자_이름'] || data['주문자이름'];
+        
+        if (!hasAnyRequiredField) {
+          errors.push('주문_번호(또는 주문번호), 상품명, 주문자_이름(또는 주문자이름) 중 하나 이상이 필요합니다.');
         }
-      });
+      }
     }
   }
   
