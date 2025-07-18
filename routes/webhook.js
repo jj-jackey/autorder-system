@@ -136,39 +136,22 @@ function validateOrderData(data) {
   // 런모아 실제 형식 검증
   if (data.orders && Array.isArray(data.orders)) {
     // 다중 주문 형식 (실제 런모아 엑셀 형식)
-    console.log('🔍 다중 주문 형식 검증 시작:', {
-      ordersCount: data.orders.length,
-      firstOrder: data.orders[0] ? Object.keys(data.orders[0]) : 'undefined'
-    });
-    
     if (data.orders.length === 0) {
       errors.push('주문 목록이 비어있습니다.');
     } else {
       data.orders.forEach((order, index) => {
-        console.log(`📦 주문 ${index + 1} 검증:`, {
-          주문_번호: order.주문_번호,
-          상품명: order.상품명,
-          주문자_이름: order.주문자_이름,
-          수량: order.수량,
-          allFields: Object.keys(order)
-        });
-        
         // 필드명이 없을 때만 오류 처리 (빈 값은 허용)
         if (order.주문_번호 === undefined || order.주문_번호 === null) {
           errors.push(`주문 ${index + 1}: 주문_번호가 필요합니다.`);
-          console.error(`❌ 주문 ${index + 1}: 주문_번호 누락`);
         }
         if (order.상품명 === undefined || order.상품명 === null) {
           errors.push(`주문 ${index + 1}: 상품명이 필요합니다.`);
-          console.error(`❌ 주문 ${index + 1}: 상품명 누락`);
         }
         if (order.주문자_이름 === undefined || order.주문자_이름 === null) {
           errors.push(`주문 ${index + 1}: 주문자_이름이 필요합니다.`);
-          console.error(`❌ 주문 ${index + 1}: 주문자_이름 누락`);
         }
         if (order.수량 === undefined || order.수량 === null || order.수량 <= 0) {
           errors.push(`주문 ${index + 1}: 유효한 수량이 필요합니다.`);
-          console.error(`❌ 주문 ${index + 1}: 수량 문제, 값: ${order.수량}`);
         }
       });
     }
@@ -206,28 +189,11 @@ function validateOrderData(data) {
       }
     } else {
       // 한글 필드명 형식 검증 (여러 형식 지원)
-      console.log('🔍 단일 주문 데이터 검증 시작:', {
-        received_data: data,
-        data_keys: Object.keys(data),
-        주문_번호_value: data['주문_번호'],
-        상품명_value: data['상품명'],
-        주문자_이름_value: data['주문자_이름']
-      });
-      
       const hasUnderscoreFormat = data['주문_번호'] || data['상품명'] || data['주문자_이름'];
       const hasNormalFormat = data['주문번호'] || data['상품명'] || data['주문자이름'];
       
-      console.log('🔍 형식 검증 결과:', {
-        hasUnderscoreFormat: !!hasUnderscoreFormat,
-        hasNormalFormat: !!hasNormalFormat,
-        주문_번호_exists: !!data['주문_번호'],
-        상품명_exists: !!data['상품명'],
-        주문자_이름_exists: !!data['주문자_이름']
-      });
-      
       if (hasUnderscoreFormat) {
-        // 언더스코어 형식
-        console.log('✅ 언더스코어 형식으로 검증 진행');
+        // 언더스코어 형식 (예: 주문_번호)
         const requiredFields = [
           '주문_번호',
           '상품명', 
@@ -236,15 +202,11 @@ function validateOrderData(data) {
         
         requiredFields.forEach(field => {
           if (!data[field]) {
-            console.error(`❌ 필수 필드 누락: ${field} = ${data[field]}`);
             errors.push(`${field}는 필수 필드입니다.`);
-          } else {
-            console.log(`✅ 필수 필드 확인: ${field} = ${data[field]}`);
           }
         });
       } else if (hasNormalFormat) {
-        // 일반 형식 (템플릿 기반)
-        console.log('✅ 일반 형식으로 검증 진행');
+        // 일반 형식 (예: 주문번호)
         const requiredFields = [
           '주문번호',
           '상품명', 
@@ -253,29 +215,14 @@ function validateOrderData(data) {
         
         requiredFields.forEach(field => {
           if (!data[field]) {
-            console.error(`❌ 필수 필드 누락: ${field} = ${data[field]}`);
             errors.push(`${field}는 필수 필드입니다.`);
-          } else {
-            console.log(`✅ 필수 필드 확인: ${field} = ${data[field]}`);
           }
         });
       } else {
         // 필수 필드 중 하나라도 있는지 확인
-        console.error('❌ 어떤 형식도 인식되지 않음');
         const hasAnyRequiredField = data['주문_번호'] || data['주문번호'] || 
                                    data['상품명'] || 
                                    data['주문자_이름'] || data['주문자이름'];
-        
-        console.log('🔍 최종 필드 확인:', {
-          hasAnyRequiredField: !!hasAnyRequiredField,
-          all_field_checks: {
-            '주문_번호': !!data['주문_번호'],
-            '주문번호': !!data['주문번호'],
-            '상품명': !!data['상품명'],
-            '주문자_이름': !!data['주문자_이름'],
-            '주문자이름': !!data['주문자이름']
-          }
-        });
         
         if (!hasAnyRequiredField) {
           errors.push('주문_번호(또는 주문번호), 상품명, 주문자_이름(또는 주문자이름) 중 하나 이상이 필요합니다.');
@@ -373,11 +320,7 @@ function standardizeOrderData(orderData) {
     }
   }
   
-  console.log('🏷️ 런모아 → 표준 형식 변환 완료:', {
-    주문수: orders.length,
-    첫번째_주문번호: orders[0]?.주문번호,
-    첫번째_상품명: orders[0]?.상품명
-  });
+  console.log('🏷️ 런모아 → 표준 형식 변환 완료:', orders.length + '개 주문');
   
   // 첫 번째 주문을 대표로 반환 (기존 시스템 호환성)
   return orders[0] || {};
@@ -424,12 +367,6 @@ async function processWebhookOrder(standardizedData) {
     // 템플릿 기반 헤더 및 데이터 생성
     const { columns, rowData } = createExcelStructure(runmoaTemplate, mappingRules);
     
-    console.log('📊 Excel 생성 데이터 확인:', {
-      standardizedData: standardizedData,
-      mappingRules: mappingRules,
-      rowData: rowData
-    });
-    
     // 발주서 헤더 설정
     worksheet.columns = columns;
     
@@ -454,8 +391,6 @@ async function processWebhookOrder(standardizedData) {
       enhancedRowData[key] = value;
     });
     
-    console.log('✨ 강화된 Excel 데이터:', enhancedRowData);
-    
     // 한글 데이터 명시적 문자열 변환 및 추가 (인코딩 문제 해결)
     const stringifiedRowData = {};
     Object.keys(enhancedRowData).forEach(key => {
@@ -469,8 +404,6 @@ async function processWebhookOrder(standardizedData) {
         stringifiedRowData[key] = '';
       }
     });
-    
-    console.log('🔤 UTF-8 변환된 데이터:', stringifiedRowData);
     
     // 먼저 빈 행을 추가한 후 셀 별로 값을 설정
     const dataRow = worksheet.addRow({});
@@ -504,8 +437,6 @@ async function processWebhookOrder(standardizedData) {
         const finalValue = Buffer.from(String(cellValue), 'utf8').toString('utf8');
         cell.value = finalValue;
         cell.alignment = { wrapText: true, vertical: 'middle' };
-        
-        console.log(`📝 셀 설정: ${column.header} = "${finalValue}"`);
       }
     });
     
@@ -673,8 +604,6 @@ router.get('/status', authenticateWebhookAPI, (req, res) => {
 // 📋 런모아 전용 템플릿 불러오기
 async function loadRunmoaTemplate() {
   try {
-    console.log('🔍 런모아 템플릿 불러오기 시작');
-    
     // 환경변수에서 템플릿 ID 또는 이름 확인
     const templateId = process.env.RUNMOA_TEMPLATE_ID;
     const templateName = process.env.RUNMOA_TEMPLATE_NAME;
@@ -683,7 +612,6 @@ async function loadRunmoaTemplate() {
     
     if (templateId) {
       // ID로 템플릿 조회
-      console.log('📋 템플릿 ID로 조회:', templateId);
       const { data, error } = await supabase
         .from('order_templates')
         .select('*')
@@ -693,15 +621,11 @@ async function loadRunmoaTemplate() {
         
       if (!error && data) {
         template = data;
-        console.log('✅ ID로 템플릿 발견:', template.template_name);
-      } else {
-        console.warn('⚠️ 지정된 ID의 템플릿을 찾을 수 없음:', templateId);
       }
     }
     
     if (!template && templateName) {
       // 이름으로 템플릿 조회
-      console.log('📋 템플릿 이름으로 조회:', templateName);
       const { data, error } = await supabase
         .from('order_templates')
         .select('*')
@@ -712,15 +636,11 @@ async function loadRunmoaTemplate() {
         
       if (!error && data && data.length > 0) {
         template = data[0];
-        console.log('✅ 이름으로 템플릿 발견:', template.template_name);
-      } else {
-        console.warn('⚠️ 지정된 이름의 템플릿을 찾을 수 없음:', templateName);
       }
     }
     
     if (!template) {
       // "런모아" 키워드로 템플릿 검색
-      console.log('🔍 "런모아" 키워드로 템플릿 검색');
       const { data, error } = await supabase
         .from('order_templates')
         .select('*')
@@ -732,9 +652,6 @@ async function loadRunmoaTemplate() {
         
       if (!error && data && data.length > 0) {
         template = data[0];
-        console.log('✅ 키워드로 템플릿 발견:', template.template_name);
-      } else {
-        console.warn('⚠️ 런모아 관련 템플릿을 찾을 수 없음');
       }
     }
     
@@ -752,11 +669,7 @@ async function loadRunmoaTemplate() {
       })
       .eq('id', template.id);
     
-    console.log('✅ 런모아 템플릿 로드 완료:', {
-      id: template.id,
-      name: template.template_name,
-      description: template.description
-    });
+    console.log('✅ 런모아 템플릿 로드 완료:', template.template_name);
     
     return {
       id: template.id,
@@ -862,13 +775,8 @@ function createMappingFromTemplate(template, standardizedData) {
     Object.keys(supplierMapping).forEach(supplierField => {
       const sourceField = supplierMapping[supplierField];
       
-      console.log(`🔍 매핑 시도: "${sourceField}" → "${supplierField}"`);
-      console.log(`📊 사용 가능한 데이터:`, Object.keys(dataMapping));
-      console.log(`💾 실제 값: "${dataMapping[sourceField]}"`);
-      
       if (dataMapping[sourceField] !== undefined && dataMapping[sourceField] !== null && dataMapping[sourceField] !== '') {
         mappingRules[supplierField] = dataMapping[sourceField];
-        console.log(`✅ 매핑 성공: ${sourceField} = "${dataMapping[sourceField]}"`);
       } else {
         // 기본값 설정
         let defaultValue = '';
@@ -890,7 +798,6 @@ function createMappingFromTemplate(template, standardizedData) {
           defaultValue = standardizedData.주문자이름 || '이름 없음';
         }
         
-        console.warn(`⚠️ 매핑 실패: ${sourceField} → ${supplierField}, 기본값 적용: "${defaultValue}"`);
         mappingRules[supplierField] = defaultValue;
       }
     });
@@ -939,11 +846,6 @@ function createExcelStructure(template, mappingRules) {
         width: getColumnWidth(fieldName)
       });
       rowData[key] = mappingRules[fieldName];
-    });
-    
-    console.log('📊 Excel 구조 생성 완료:', {
-      columnCount: columns.length,
-      columns: columns.map(c => c.header).join(', ')
     });
     
     return { columns, rowData };
