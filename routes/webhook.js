@@ -206,11 +206,28 @@ function validateOrderData(data) {
       }
     } else {
       // 한글 필드명 형식 검증 (여러 형식 지원)
+      console.log('🔍 단일 주문 데이터 검증 시작:', {
+        received_data: data,
+        data_keys: Object.keys(data),
+        주문_번호_value: data['주문_번호'],
+        상품명_value: data['상품명'],
+        주문자_이름_value: data['주문자_이름']
+      });
+      
       const hasUnderscoreFormat = data['주문_번호'] || data['상품명'] || data['주문자_이름'];
       const hasNormalFormat = data['주문번호'] || data['상품명'] || data['주문자이름'];
       
+      console.log('🔍 형식 검증 결과:', {
+        hasUnderscoreFormat: !!hasUnderscoreFormat,
+        hasNormalFormat: !!hasNormalFormat,
+        주문_번호_exists: !!data['주문_번호'],
+        상품명_exists: !!data['상품명'],
+        주문자_이름_exists: !!data['주문자_이름']
+      });
+      
       if (hasUnderscoreFormat) {
         // 언더스코어 형식
+        console.log('✅ 언더스코어 형식으로 검증 진행');
         const requiredFields = [
           '주문_번호',
           '상품명', 
@@ -219,11 +236,15 @@ function validateOrderData(data) {
         
         requiredFields.forEach(field => {
           if (!data[field]) {
+            console.error(`❌ 필수 필드 누락: ${field} = ${data[field]}`);
             errors.push(`${field}는 필수 필드입니다.`);
+          } else {
+            console.log(`✅ 필수 필드 확인: ${field} = ${data[field]}`);
           }
         });
       } else if (hasNormalFormat) {
         // 일반 형식 (템플릿 기반)
+        console.log('✅ 일반 형식으로 검증 진행');
         const requiredFields = [
           '주문번호',
           '상품명', 
@@ -232,14 +253,29 @@ function validateOrderData(data) {
         
         requiredFields.forEach(field => {
           if (!data[field]) {
+            console.error(`❌ 필수 필드 누락: ${field} = ${data[field]}`);
             errors.push(`${field}는 필수 필드입니다.`);
+          } else {
+            console.log(`✅ 필수 필드 확인: ${field} = ${data[field]}`);
           }
         });
       } else {
         // 필수 필드 중 하나라도 있는지 확인
+        console.error('❌ 어떤 형식도 인식되지 않음');
         const hasAnyRequiredField = data['주문_번호'] || data['주문번호'] || 
                                    data['상품명'] || 
                                    data['주문자_이름'] || data['주문자이름'];
+        
+        console.log('🔍 최종 필드 확인:', {
+          hasAnyRequiredField: !!hasAnyRequiredField,
+          all_field_checks: {
+            '주문_번호': !!data['주문_번호'],
+            '주문번호': !!data['주문번호'],
+            '상품명': !!data['상품명'],
+            '주문자_이름': !!data['주문자_이름'],
+            '주문자이름': !!data['주문자이름']
+          }
+        });
         
         if (!hasAnyRequiredField) {
           errors.push('주문_번호(또는 주문번호), 상품명, 주문자_이름(또는 주문자이름) 중 하나 이상이 필요합니다.');
